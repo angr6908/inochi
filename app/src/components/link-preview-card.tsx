@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Play, ExternalLink } from "lucide-react";
 import { LinkPreview } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,65 @@ function hostOf(url: string): string {
 }
 
 type Embed = { src: string; title: string };
+
+const mediaRadius = "calc(var(--radius) * 1.4 - 1px)";
+const iframeAllow =
+  "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen";
+
+function EmbedPlayer({ embed }: { embed: Embed }) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const [height, setHeight] = useState<number | null>(null);
+  const measuredHeight = height === null ? undefined : { height };
+  const roundedTop = {
+    borderTopLeftRadius: mediaRadius,
+    borderTopRightRadius: mediaRadius,
+  };
+
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+
+    const updateHeight = () => {
+      const width = wrapper.getBoundingClientRect().width;
+      if (width <= 0) return;
+      const nextHeight = Math.max(1, Math.floor((width * 9) / 16));
+      setHeight((current) => (current === nextHeight ? current : nextHeight));
+    };
+
+    updateHeight();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateHeight);
+      return () => window.removeEventListener("resize", updateHeight);
+    }
+
+    const resizeObserver = new ResizeObserver(updateHeight);
+    resizeObserver.observe(wrapper);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={wrapperRef}
+      className={cn("bg-transparent", height === null && "aspect-video")}
+      style={measuredHeight}
+    >
+      <iframe
+        src={embed.src}
+        title={embed.title}
+        width={560}
+        height={315}
+        style={{ ...measuredHeight, ...roundedTop }}
+        className={cn(
+          "block w-full overflow-hidden border-0 bg-transparent",
+          height === null && "aspect-video",
+        )}
+        allow={iframeAllow}
+        allowFullScreen
+      />
+    </div>
+  );
+}
 
 /** Build an inline player URL for embeddable providers, else null. */
 function getEmbed(url: string): Embed | null {
@@ -112,17 +171,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
 
   const media = (() => {
     if (playing && embed) {
-      return (
-        <div className="relative aspect-video w-full bg-black">
-          <iframe
-            src={embed.src}
-            title={embed.title}
-            className="absolute inset-0 h-full w-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
-            allowFullScreen
-          />
-        </div>
-      );
+      return <EmbedPlayer embed={embed} />;
     }
 
     if (!image && !embed) return null;
@@ -189,7 +238,8 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
   return (
     <div
       className={cn(
-        "group mt-2 overflow-hidden rounded-xl border border-border bg-card",
+        "group mt-2 rounded-xl border border-border bg-card",
+        playing && embed ? "overflow-visible" : "overflow-hidden",
         "transition-colors hover:bg-accent/40"
       )}
     >
