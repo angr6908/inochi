@@ -468,11 +468,11 @@ const TWITCH_GQL_CLIENT_ID: &str = "kimne78kx3ncx6brgo4mv6wki5h1ko";
 
 enum TwitchTarget {
     Clip(String),
+    Video(String),
     Channel(String),
 }
 
-/// Classify a Twitch URL as a clip or a channel (live/offline). VODs and other
-/// paths return `None` (left to OpenGraph).
+/// Classify a Twitch URL as a clip, VOD, or channel (live/offline).
 fn twitch_target(url: &str) -> Option<TwitchTarget> {
     let host = host_of(url);
     let after = url.split("://").nth(1).unwrap_or(url);
@@ -484,6 +484,11 @@ fn twitch_target(url: &str) -> Option<TwitchTarget> {
     if let Some(pos) = segs.iter().position(|s| *s == "clip") {
         if let Some(slug) = segs.get(pos + 1) {
             return Some(TwitchTarget::Clip(slug.to_string()));
+        }
+    }
+    if matches!(segs.first(), Some(&"videos")) {
+        if let Some(id) = segs.get(1).filter(|id| id.chars().all(|c| c.is_ascii_digit())) {
+            return Some(TwitchTarget::Video(id.to_string()));
         }
     }
     let reserved = [
@@ -542,6 +547,30 @@ async fn twitch_preview(
                 desc,
             )
         }
+        TwitchTarget::Video(id) => {
+            let q = format!(
+                r#"{{video(id:"{}"){{title previewThumbnailURL(width:1280,height:720) owner{{displayName}} game{{displayName}}}}}}"#,
+                id
+            );
+            let Some(j) = twitch_gql(client, q).await else {
+                return (None, None, None, None);
+            };
+            let v = match j.pointer("/data/video") {
+                Some(v) if !v.is_null() => v,
+                _ => return (None, None, None, None),
+            };
+            let desc = v
+                .pointer("/game/displayName")
+                .and_then(s)
+                .map(|g| format!("Video · {}", g))
+                .or_else(|| Some("Twitch video".to_string()));
+            (
+                v.get("title").and_then(s),
+                v.get("previewThumbnailURL").and_then(s),
+                v.pointer("/owner/displayName").and_then(s),
+                desc,
+            )
+        }
         TwitchTarget::Channel(login) => {
             let q = format!(
                 r#"{{user(login:"{}"){{displayName profileImageURL(width:300) stream{{title previewImageURL game{{displayName}}}}}}}}"#,
@@ -588,7 +617,7 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
     let is_youtube = host.contains("youtube") || host.contains("youtu.be");
     let is_twitter = host == "x.com" || host.contains("twitter.com");
     let is_twitch = host.contains("twitch.tv");
-    // Twitch serves generic OG tags to bots; clips/channels resolve via GQL.
+    // Twitch serves generic OG tags to bots; clips, VODs, and channels resolve via GQL.
     let twitch_t = if is_twitch { twitch_target(url) } else { None };
 
     let mut title = None;
@@ -598,7 +627,7 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
     let mut author = None;
 
     // OpenGraph from the page HTML. Skipped for X/Twitter (JS login wall) and
-    // for Twitch clips/channels (resolved via GQL below).
+    // for Twitch targets resolved via GQL below.
     if !is_twitter && twitch_t.is_none() {
         if let Ok(resp) = client.get(url).send().await {
             if let Ok(html_text) = resp.text().await {
@@ -672,7 +701,7 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
         }
     }
 
-    // Twitch clips/channels: resolve title/thumbnail/author via GQL.
+    // Twitch clips, VODs, and channels: resolve title/thumbnail/author via GQL.
     if let Some(t) = &twitch_t {
         let (t_title, t_image, t_author, t_desc) = twitch_preview(client, t).await;
         if t_title.is_some() {

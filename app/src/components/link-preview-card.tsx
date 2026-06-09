@@ -13,20 +13,20 @@ function hostOf(url: string): string {
   }
 }
 
-type Embed = { src: string; title: string };
+type EmbedProvider = "youtube" | "twitch" | "vimeo";
+type Embed = { src: string; title: string; provider: EmbedProvider };
 
-const mediaRadius = "calc(var(--radius) * 1.4 - 1px)";
 const iframeAllow =
   "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen";
 
 function EmbedPlayer({ embed }: { embed: Embed }) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const [height, setHeight] = useState<number | null>(null);
-  const measuredHeight = height === null ? undefined : { height };
-  const roundedTop = {
-    borderTopLeftRadius: mediaRadius,
-    borderTopRightRadius: mediaRadius,
-  };
+  const [viewport, setViewport] = useState<{
+    width: number;
+    height: number;
+    scale: number;
+  } | null>(null);
+  const useScaledViewport = embed.provider !== "youtube";
 
   useLayoutEffect(() => {
     const wrapper = wrapperRef.current;
@@ -35,8 +35,27 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
     const updateHeight = () => {
       const width = wrapper.getBoundingClientRect().width;
       if (width <= 0) return;
-      const nextHeight = Math.max(1, Math.floor((width * 9) / 16));
-      setHeight((current) => (current === nextHeight ? current : nextHeight));
+
+      const viewportWidth = useScaledViewport ? Math.ceil(width / 16) * 16 : width;
+      const nextViewport = useScaledViewport
+        ? {
+            width: viewportWidth,
+            height: (viewportWidth / 16) * 9,
+            scale: width / viewportWidth,
+          }
+        : {
+            width,
+            height: Math.max(1, Math.floor((width * 9) / 16)),
+            scale: 1,
+          };
+      setViewport((current) =>
+        current &&
+        current.width === nextViewport.width &&
+        current.height === nextViewport.height &&
+        Math.abs(current.scale - nextViewport.scale) < 0.000001
+          ? current
+          : nextViewport
+      );
     };
 
     updateHeight();
@@ -49,27 +68,38 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
     const resizeObserver = new ResizeObserver(updateHeight);
     resizeObserver.observe(wrapper);
     return () => resizeObserver.disconnect();
-  }, []);
+  }, [useScaledViewport]);
 
   return (
     <div
       ref={wrapperRef}
-      className={cn("bg-transparent", height === null && "aspect-video")}
-      style={measuredHeight}
+      className={cn(
+        "relative w-full overflow-hidden bg-transparent",
+        (useScaledViewport || !viewport) && "aspect-video"
+      )}
+      style={!useScaledViewport && viewport ? { height: viewport.height } : undefined}
     >
-      <iframe
-        src={embed.src}
-        title={embed.title}
-        width={560}
-        height={315}
-        style={{ ...measuredHeight, ...roundedTop }}
-        className={cn(
-          "block w-full overflow-hidden border-0 bg-transparent",
-          height === null && "aspect-video",
-        )}
-        allow={iframeAllow}
-        allowFullScreen
-      />
+      {viewport && (
+        <iframe
+          src={embed.src}
+          title={embed.title}
+          width={viewport.width}
+          height={viewport.height}
+          style={
+            useScaledViewport
+              ? {
+                  width: viewport.width,
+                  height: viewport.height,
+                  transform: `scale(${viewport.scale})`,
+                  transformOrigin: "top left",
+                }
+              : { width: "100%", height: viewport.height }
+          }
+          className="absolute top-0 left-0 block border-0 bg-transparent"
+          allow={iframeAllow}
+          allowFullScreen
+        />
+      )}
     </div>
   );
 }
@@ -99,6 +129,7 @@ function getEmbed(url: string): Embed | null {
       return {
         src: `https://www.youtube-nocookie.com/embed/${id}?autoplay=1`,
         title: "YouTube video player",
+        provider: "youtube",
       };
   }
 
@@ -109,21 +140,25 @@ function getEmbed(url: string): Embed | null {
       return {
         src: `https://clips.twitch.tv/embed?clip=${parts[0]}&parent=${parent}&autoplay=true`,
         title: "Twitch clip",
+        provider: "twitch",
       };
     if (parts[0] === "videos" && parts[1])
       return {
         src: `https://player.twitch.tv/?video=${parts[1]}&parent=${parent}&autoplay=true`,
         title: "Twitch video",
+        provider: "twitch",
       };
     if (parts[1] === "clip" && parts[2])
       return {
         src: `https://clips.twitch.tv/embed?clip=${parts[2]}&parent=${parent}&autoplay=true`,
         title: "Twitch clip",
+        provider: "twitch",
       };
     if (parts[0] && !["directory", "settings", "p"].includes(parts[0]))
       return {
         src: `https://player.twitch.tv/?channel=${parts[0]}&parent=${parent}&autoplay=true`,
         title: "Twitch stream",
+        provider: "twitch",
       };
   }
 
@@ -134,6 +169,7 @@ function getEmbed(url: string): Embed | null {
       return {
         src: `https://player.vimeo.com/video/${m[1]}?autoplay=1`,
         title: "Vimeo video player",
+        provider: "vimeo",
       };
   }
 
@@ -161,7 +197,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
   const host = hostOf(preview.url);
   const site = preview.site_name ?? host;
   const embed = getEmbed(preview.url);
-  const isYoutube = embed?.title === "YouTube video player";
+  const isYoutube = embed?.provider === "youtube";
 
   const measureThumb = (el: HTMLImageElement | null) => {
     if (!el || !el.complete || !el.naturalHeight) return;
@@ -217,7 +253,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
         href={preview.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="block bg-muted"
+        className="block overflow-hidden bg-muted"
       >
         {/* Reserve the OpenGraph-standard 1.91:1 box up front (via aspect-ratio,
             which applies before the resource loads) so the card doesn't grow and
@@ -238,8 +274,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
   return (
     <div
       className={cn(
-        "group mt-2 rounded-xl border border-border bg-card",
-        playing && embed ? "overflow-visible" : "overflow-hidden",
+        "group mt-2 overflow-hidden rounded-xl bg-card ring-1 ring-border",
         "transition-colors hover:bg-accent/40"
       )}
     >
