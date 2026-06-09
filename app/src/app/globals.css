@@ -1,0 +1,252 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+/* Fonts (all self-hosted):
+   - Geist — UI chrome (via the geist npm package, set on <html> in layout.tsx).
+   - Roboto — post content + tags, the font YouTube serves. Loaded via
+     next/font/google in layout.tsx.
+   - Noto Sans JP — CJK glyphs (post content + UI fallback). Loaded via
+     next/font/google in layout.tsx. */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-heading);
+
+  /* ── Type scale ──────────────────────────────────────────────
+     One coherent scale governing every text-* utility (content
+     and shadcn primitives alike). As size grows, leading tightens
+     and tracking goes from slightly open → tight: small serif text
+     gets air for legibility, large display text gets editorial snap. */
+  --text-xs: 0.75rem;        /* 12px — meta, counts, labels        */
+  --text-xs--line-height: 1.45;
+  --text-xs--letter-spacing: 0.01em;
+  --text-sm: 0.875rem;       /* 14px — secondary, controls, names  */
+  --text-sm--line-height: 1.5;
+  --text-sm--letter-spacing: 0.005em;
+  --text-base: 0.9375rem;    /* 15px — primary reading body (Mastodon) */
+  --text-base--line-height: 1.47;
+  --text-base--letter-spacing: 0em;
+  --text-lg: 1.125rem;       /* 18px — section headings            */
+  --text-lg--line-height: 1.4;
+  --text-lg--letter-spacing: -0.01em;
+  --text-xl: 1.25rem;        /* 20px — wordmark, in-post h1        */
+  --text-xl--line-height: 1.3;
+  --text-xl--letter-spacing: -0.015em;
+  --text-2xl: 1.5rem;        /* 24px — page titles                 */
+  --text-2xl--line-height: 1.2;
+  --text-2xl--letter-spacing: -0.02em;
+
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* ─────────────────────────────────────────────
+   Claude.ai Design Tokens — EXACT values from
+   [data-theme=claude] in production CSS
+   ───────────────────────────────────────────── */
+
+:root {
+  /* Claude token mapping:
+     --bg-000: 0 0% 100%        → white
+     --bg-100: 48 33.3% 97.1%   → warm off-white
+     --bg-200: 53 28.6% 94.5%   → cream
+     --bg-300: 48 25% 92.2%     → warm light gray
+     --bg-400: 50 20.7% 88.6%   → warm gray
+     --text-000: 60 2.6% 7.6%   → near-black
+     --text-200: 60 2.5% 23.3%  → dark gray
+     --text-400: 51 3.1% 43.7%  → medium gray
+     --brand-000: 15 54.2% 51.2% → terracotta
+     --border-100: 30 3.3% 11.8% (with low alpha)
+  */
+
+  /* UI chrome: Geist (var set by the geist npm package on <html>), CJK → Noto Sans JP.
+     Post content + tags: Roboto + Noto, matching YouTube's `Roboto, Noto, sans-serif`
+     stack. Roboto + Noto Sans JP load via next/font/google (vars set on <html>). */
+  --font-sans: var(--font-geist-sans), var(--font-noto-sans-jp), sans-serif;
+  --font-heading: var(--font-geist-sans), var(--font-noto-sans-jp), sans-serif;
+  --font-content: var(--font-roboto), var(--font-noto-sans-jp), sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Surfaces */
+  --background: hsl(48 33.3% 97.1%);
+  --foreground: hsl(60 2.6% 7.6%);
+
+  --card: hsl(0 0% 100%);
+  --card-foreground: hsl(60 2.6% 7.6%);
+
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(60 2.6% 7.6%);
+
+  /* Brand — terracotta */
+  --primary: hsl(15 54.2% 51.2%);
+  --primary-foreground: hsl(0 0% 100%);
+
+  /* Neutral tones */
+  --secondary: hsl(53 28.6% 94.5%);
+  --secondary-foreground: hsl(60 2.6% 7.6%);
+
+  --muted: hsl(48 25% 92.2%);
+  --muted-foreground: hsl(51 3.1% 43.7%);
+
+  --accent: hsl(53 28.6% 94.5%);
+  --accent-foreground: hsl(60 2.6% 7.6%);
+
+  /* Danger */
+  --destructive: hsl(0 56.2% 45.4%);
+
+  /* Borders — warm, subtle */
+  --border: hsl(30 3.3% 11.8% / 12%);
+  --input: hsl(30 3.3% 11.8% / 18%);
+  --ring: hsl(15 54.2% 51.2%);
+
+  /* Charts */
+  --chart-1: hsl(15 54.2% 51.2%);
+  --chart-2: hsl(50 20.7% 88.6%);
+  --chart-3: hsl(51 3.1% 43.7%);
+  --chart-4: hsl(60 2.5% 23.3%);
+  --chart-5: hsl(60 2.6% 7.6%);
+
+  --radius: 0.75rem;
+
+  /* Sidebar */
+  --sidebar: hsl(48 33.3% 97.1%);
+  --sidebar-foreground: hsl(60 2.6% 7.6%);
+  --sidebar-primary: hsl(15 54.2% 51.2%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(53 28.6% 94.5%);
+  --sidebar-accent-foreground: hsl(60 2.6% 7.6%);
+  --sidebar-border: hsl(30 3.3% 11.8% / 12%);
+  --sidebar-ring: hsl(15 54.2% 51.2%);
+}
+
+.dark {
+  /* Claude dark mode tokens from [data-theme=claude][data-mode=dark] */
+  --background: hsl(60 2.1% 18.4%);
+  --foreground: hsl(48 33.3% 97.1%);
+
+  --card: hsl(60 2.7% 14.5%);
+  --card-foreground: hsl(48 33.3% 97.1%);
+
+  --popover: hsl(60 2.7% 14.5%);
+  --popover-foreground: hsl(48 33.3% 97.1%);
+
+  --primary: hsl(15 63.1% 59.6%);
+  --primary-foreground: hsl(0 0% 100%);
+
+  --secondary: hsl(30 3.3% 11.8%);
+  --secondary-foreground: hsl(48 33.3% 97.1%);
+
+  --muted: hsl(60 2.6% 7.6%);
+  --muted-foreground: hsl(48 4.8% 59.2%);
+
+  --accent: hsl(30 3.3% 11.8%);
+  --accent-foreground: hsl(48 33.3% 97.1%);
+
+  --destructive: hsl(0 67% 59.6%);
+
+  --border: hsl(51 16.5% 84.5% / 10%);
+  --input: hsl(51 16.5% 84.5% / 15%);
+  --ring: hsl(15 63.1% 59.6%);
+
+  --chart-1: hsl(15 63.1% 59.6%);
+  --chart-2: hsl(48 4.8% 59.2%);
+  --chart-3: hsl(50 9% 73.7%);
+  --chart-4: hsl(48 3.4% 29.2%);
+  --chart-5: hsl(60 2.7% 14.5%);
+
+  --sidebar: hsl(60 2.7% 14.5%);
+  --sidebar-foreground: hsl(48 33.3% 97.1%);
+  --sidebar-primary: hsl(15 63.1% 59.6%);
+  --sidebar-primary-foreground: hsl(0 0% 100%);
+  --sidebar-accent: hsl(30 3.3% 11.8%);
+  --sidebar-accent-foreground: hsl(48 33.3% 97.1%);
+  --sidebar-border: hsl(51 16.5% 84.5% / 10%);
+  --sidebar-ring: hsl(15 63.1% 59.6%);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    /* Metrics match vspo.me: 15px, line-height ~1.47, weight 400. */
+    font-size: 0.9375rem;
+    font-weight: 400;
+    line-height: 1.47;
+  }
+  /* Same text-render settings as YouTube — antialiased smoothing only
+     (no grayscale, no font-synthesis:none, no forced kern). */
+  body, input, textarea, select, button {
+    -webkit-font-smoothing: antialiased;
+  }
+  html {
+    font-family: var(--font-sans);
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: none;
+  }
+
+  /* Smooth transitions for interactive elements */
+  button, a, input, textarea, select, [role="button"] {
+    transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease, transform 0.1s ease;
+  }
+
+  /* Serif headings — editorial feel: weight 600, tight leading, refined tracking */
+  h1, h2, h3, h4 {
+    font-family: var(--font-heading);
+    font-weight: 600;
+    line-height: 1.25;
+    letter-spacing: -0.015em;
+  }
+  /* Larger display headings get tighter tracking for a polished look */
+  h1 {
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Post content + tags use Roboto + Noto (YouTube stack); the rest of the app is Geist.
+   The :is(...) override also pulls markdown headings inside posts onto Roboto. */
+.font-content,
+.font-content :is(h1, h2, h3, h4, h5, h6) {
+  font-family: var(--font-content);
+}

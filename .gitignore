@@ -1,0 +1,7 @@
+.DS_Store
+core/target/
+app/node_modules/
+app/.next/
+app/next-env.d.ts
+app/tsconfig.tsbuildinfo
+CLAUDE.md

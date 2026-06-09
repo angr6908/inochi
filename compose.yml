@@ -1,0 +1,8 @@
+services:
+  inochi:
+    image: unmol637/inochi:latest
+    container_name: inochi
+    restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./data:/data
