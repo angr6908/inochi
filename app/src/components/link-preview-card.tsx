@@ -26,7 +26,7 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
     height: number;
     scale: number;
   } | null>(null);
-  const scaleMode = embed.provider === "youtube" ? "zoom" : "transform";
+  const useScaledViewport = embed.provider === "twitch";
 
   useLayoutEffect(() => {
     const wrapper = wrapperRef.current;
@@ -36,12 +36,18 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
       const width = wrapper.getBoundingClientRect().width;
       if (width <= 0) return;
 
-      const viewportWidth = Math.ceil(width / 16) * 16;
-      const nextViewport = {
-        width: viewportWidth,
-        height: (viewportWidth / 16) * 9,
-        scale: width / viewportWidth,
-      };
+      const viewportWidth = useScaledViewport ? Math.ceil(width / 16) * 16 : width;
+      const nextViewport = useScaledViewport
+        ? {
+            width: viewportWidth,
+            height: (viewportWidth / 16) * 9,
+            scale: width / viewportWidth,
+          }
+        : {
+            width,
+            height: Math.max(1, Math.floor((width * 9) / 16)),
+            scale: 1,
+          };
       setViewport((current) =>
         current &&
         current.width === nextViewport.width &&
@@ -62,12 +68,16 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
     const resizeObserver = new ResizeObserver(updateHeight);
     resizeObserver.observe(wrapper);
     return () => resizeObserver.disconnect();
-  }, []);
+  }, [useScaledViewport]);
 
   return (
     <div
       ref={wrapperRef}
-      className="relative aspect-video w-full overflow-hidden bg-transparent"
+      className={cn(
+        "relative w-full overflow-hidden bg-transparent",
+        (useScaledViewport || !viewport) && "aspect-video"
+      )}
+      style={!useScaledViewport && viewport ? { height: viewport.height } : undefined}
     >
       {viewport && (
         <iframe
@@ -76,18 +86,14 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
           width={viewport.width}
           height={viewport.height}
           style={
-            scaleMode === "zoom"
+            useScaledViewport
               ? {
-                  width: viewport.width,
-                  height: viewport.height,
-                  zoom: viewport.scale,
-                }
-              : {
                   width: viewport.width,
                   height: viewport.height,
                   transform: `scale(${viewport.scale})`,
                   transformOrigin: "top left",
                 }
+              : { width: "100%", height: viewport.height }
           }
           className="absolute top-0 left-0 block border-0 bg-transparent"
           allow={iframeAllow}
@@ -121,7 +127,7 @@ function getEmbed(url: string): Embed | null {
     }
     if (id)
       return {
-        src: `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=1&playsinline=1`,
+        src: `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1`,
         title: "YouTube video player",
         provider: "youtube",
       };
@@ -132,25 +138,25 @@ function getEmbed(url: string): Embed | null {
     const parts = u.pathname.split("/").filter(Boolean);
     if (host.startsWith("clips.") && parts[0])
       return {
-        src: `https://clips.twitch.tv/embed?clip=${parts[0]}&parent=${parent}&autoplay=true&muted=true`,
+        src: `https://clips.twitch.tv/embed?clip=${parts[0]}&parent=${parent}&autoplay=true`,
         title: "Twitch clip",
         provider: "twitch",
       };
     if (parts[0] === "videos" && parts[1])
       return {
-        src: `https://player.twitch.tv/?video=${parts[1]}&parent=${parent}&autoplay=true&muted=true`,
+        src: `https://player.twitch.tv/?video=${parts[1]}&parent=${parent}&autoplay=true`,
         title: "Twitch video",
         provider: "twitch",
       };
     if (parts[1] === "clip" && parts[2])
       return {
-        src: `https://clips.twitch.tv/embed?clip=${parts[2]}&parent=${parent}&autoplay=true&muted=true`,
+        src: `https://clips.twitch.tv/embed?clip=${parts[2]}&parent=${parent}&autoplay=true`,
         title: "Twitch clip",
         provider: "twitch",
       };
     if (parts[0] && !["directory", "settings", "p"].includes(parts[0]))
       return {
-        src: `https://player.twitch.tv/?channel=${parts[0]}&parent=${parent}&autoplay=true&muted=true`,
+        src: `https://player.twitch.tv/?channel=${parts[0]}&parent=${parent}&autoplay=true`,
         title: "Twitch stream",
         provider: "twitch",
       };
