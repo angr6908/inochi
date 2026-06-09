@@ -13,7 +13,7 @@ function hostOf(url: string): string {
   }
 }
 
-type EmbedProvider = "youtube" | "twitch" | "vimeo";
+type EmbedProvider = "youtube" | "twitch";
 type Embed = { src: string; title: string; provider: EmbedProvider };
 
 const iframeAllow =
@@ -26,7 +26,7 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
     height: number;
     scale: number;
   } | null>(null);
-  const useScaledViewport = embed.provider !== "youtube";
+  const scaleMode = embed.provider === "youtube" ? "zoom" : "transform";
 
   useLayoutEffect(() => {
     const wrapper = wrapperRef.current;
@@ -36,18 +36,12 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
       const width = wrapper.getBoundingClientRect().width;
       if (width <= 0) return;
 
-      const viewportWidth = useScaledViewport ? Math.ceil(width / 16) * 16 : width;
-      const nextViewport = useScaledViewport
-        ? {
-            width: viewportWidth,
-            height: (viewportWidth / 16) * 9,
-            scale: width / viewportWidth,
-          }
-        : {
-            width,
-            height: Math.max(1, Math.floor((width * 9) / 16)),
-            scale: 1,
-          };
+      const viewportWidth = Math.ceil(width / 16) * 16;
+      const nextViewport = {
+        width: viewportWidth,
+        height: (viewportWidth / 16) * 9,
+        scale: width / viewportWidth,
+      };
       setViewport((current) =>
         current &&
         current.width === nextViewport.width &&
@@ -68,16 +62,12 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
     const resizeObserver = new ResizeObserver(updateHeight);
     resizeObserver.observe(wrapper);
     return () => resizeObserver.disconnect();
-  }, [useScaledViewport]);
+  }, []);
 
   return (
     <div
       ref={wrapperRef}
-      className={cn(
-        "relative w-full overflow-hidden bg-transparent",
-        (useScaledViewport || !viewport) && "aspect-video"
-      )}
-      style={!useScaledViewport && viewport ? { height: viewport.height } : undefined}
+      className="relative aspect-video w-full overflow-hidden bg-transparent"
     >
       {viewport && (
         <iframe
@@ -86,14 +76,18 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
           width={viewport.width}
           height={viewport.height}
           style={
-            useScaledViewport
+            scaleMode === "zoom"
               ? {
+                  width: viewport.width,
+                  height: viewport.height,
+                  zoom: viewport.scale,
+                }
+              : {
                   width: viewport.width,
                   height: viewport.height,
                   transform: `scale(${viewport.scale})`,
                   transformOrigin: "top left",
                 }
-              : { width: "100%", height: viewport.height }
           }
           className="absolute top-0 left-0 block border-0 bg-transparent"
           allow={iframeAllow}
@@ -127,7 +121,7 @@ function getEmbed(url: string): Embed | null {
     }
     if (id)
       return {
-        src: `https://www.youtube-nocookie.com/embed/${id}?autoplay=1`,
+        src: `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&mute=1&playsinline=1`,
         title: "YouTube video player",
         provider: "youtube",
       };
@@ -138,38 +132,27 @@ function getEmbed(url: string): Embed | null {
     const parts = u.pathname.split("/").filter(Boolean);
     if (host.startsWith("clips.") && parts[0])
       return {
-        src: `https://clips.twitch.tv/embed?clip=${parts[0]}&parent=${parent}&autoplay=true`,
+        src: `https://clips.twitch.tv/embed?clip=${parts[0]}&parent=${parent}&autoplay=true&muted=true`,
         title: "Twitch clip",
         provider: "twitch",
       };
     if (parts[0] === "videos" && parts[1])
       return {
-        src: `https://player.twitch.tv/?video=${parts[1]}&parent=${parent}&autoplay=true`,
+        src: `https://player.twitch.tv/?video=${parts[1]}&parent=${parent}&autoplay=true&muted=true`,
         title: "Twitch video",
         provider: "twitch",
       };
     if (parts[1] === "clip" && parts[2])
       return {
-        src: `https://clips.twitch.tv/embed?clip=${parts[2]}&parent=${parent}&autoplay=true`,
+        src: `https://clips.twitch.tv/embed?clip=${parts[2]}&parent=${parent}&autoplay=true&muted=true`,
         title: "Twitch clip",
         provider: "twitch",
       };
     if (parts[0] && !["directory", "settings", "p"].includes(parts[0]))
       return {
-        src: `https://player.twitch.tv/?channel=${parts[0]}&parent=${parent}&autoplay=true`,
+        src: `https://player.twitch.tv/?channel=${parts[0]}&parent=${parent}&autoplay=true&muted=true`,
         title: "Twitch stream",
         provider: "twitch",
-      };
-  }
-
-  // Vimeo
-  if (host.includes("vimeo.com")) {
-    const m = url.match(/vimeo\.com\/(?:video\/)?(\d+)/);
-    if (m)
-      return {
-        src: `https://player.vimeo.com/video/${m[1]}?autoplay=1`,
-        title: "Vimeo video player",
-        provider: "vimeo",
       };
   }
 
@@ -274,7 +257,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
   return (
     <div
       className={cn(
-        "group mt-2 overflow-hidden rounded-xl bg-card ring-1 ring-border",
+        "group mt-2 overflow-hidden rounded-xl border border-border bg-card",
         "transition-colors hover:bg-accent/40"
       )}
     >
