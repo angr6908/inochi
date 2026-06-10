@@ -130,7 +130,6 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
   // post via the URL.
   const rootId = post.root_post_id || post.id;
   const isRoot = rootId === post.id;
-  const threadHref = isRoot ? `/post/${rootId}` : `/post/${rootId}#${post.id}`;
   const echoHref = isRoot
     ? `/post/${rootId}?echo=${post.id}`
     : `/post/${rootId}?echo=${post.id}#${post.id}`;
@@ -144,23 +143,32 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
     <Card id={post.id} className={cn("scroll-mt-20 gap-0 py-0", className)}>
       <CardContent className="p-4">
         {/* Header */}
-        <div className="mb-1.5 flex items-center gap-1.5 text-sm">
+        <div className="mb-2 flex items-center gap-1.5 text-sm">
           <span className="flex items-center gap-1.5">
             {!hideUsername && (
               <>
                 <span className="font-medium leading-none">{post.username}</span>
-                <span className="text-muted-foreground/50 leading-none">·</span>
+                {/* A flex-centered square rather than a "·" glyph: the middle-dot
+                    character renders low in the line box (its position is
+                    font-defined), so a small span centered by the row's
+                    items-center sits at the true vertical center, font-agnostic. */}
+                <span aria-hidden className="size-[2px] shrink-0 bg-muted-foreground/50" />
               </>
             )}
-            <Link
-              href={threadHref}
-              className="text-xs leading-none text-muted-foreground hover:text-foreground hover:underline"
-            >
+            <span className="text-xs leading-none text-muted-foreground">
               {timeAgo(post.created_at)}
-            </Link>
+            </span>
           </span>
 
-          <div className="ml-auto flex items-center gap-0.5">
+          {/* The action buttons (h-7 / size-7 = 28px) are taller than the
+              username line, so in this items-center row they'd inflate its
+              height and push the username down — leaving more space above it
+              than the card leaves below its content. The negative vertical
+              margin stops the buttons from dictating the row height, dropping
+              the header flush against the top padding without moving the buttons
+              relative to the text. It mirrors the row's own mb-1.5, so the
+              buttons' overflow ends exactly at the content edge — never into it. */}
+          <div className="-my-1.5 ml-auto flex items-center gap-0.5">
             {/* The echo button opens an inline composer for this post on the
                 thread page, or navigates to its root thread (and opens the
                 composer there) from anywhere else. */}

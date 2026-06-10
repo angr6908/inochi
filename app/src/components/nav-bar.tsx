@@ -24,7 +24,7 @@ const HOME_LOGO_RESET_PATHS = new Set([
   "/auth/signup",
 ]);
 
-export function NavBar() {
+export function NavBar({ scrolled }: { scrolled?: boolean }) {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -54,7 +54,7 @@ export function NavBar() {
   };
 
   return (
-    <header className="sticky top-0 z-50 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+    <header className="sticky top-0 z-50 bg-background">
       <div className="mx-auto flex h-14 max-w-[600px] items-center gap-3 px-4 sm:gap-4 sm:px-0">
         {searchOpen ? (
           <form onSubmit={handleSearch} className="flex flex-1 items-center gap-2">
@@ -133,6 +133,17 @@ export function NavBar() {
           </>
         )}
       </div>
+
+      {/* Hairline below the nav, shown only once content scrolls past the
+          nav's bottom edge (`scrolled`, from providers.tsx). Sized a little
+          wider than the 600px post column (20px overhang each side). Toggled
+          instantly with no animation. Click-through, no layout shift. */}
+      {scrolled && (
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-x-0 top-full mx-auto h-px w-full max-w-[640px] bg-border"
+        />
+      )}
     </header>
   );
 }

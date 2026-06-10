@@ -1,7 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Play, ExternalLink } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Play } from "lucide-react";
+import {
+  siYoutube, siTwitch, siX, siGithub, siGitlab, siReddit, siVimeo,
+  siSpotify, siSoundcloud, siTiktok, siInstagram, siFacebook, siDiscord,
+  siMedium, siSubstack, siBilibili, siNiconico, siSteam, siBandcamp,
+  siPatreon, siThreads, siBluesky, siMastodon, siWikipedia, siApplemusic,
+  siApplepodcasts, siPinterest, siTumblr, siSnapchat, siNetflix,
+  siYcombinator, siNotion, siStackoverflow, siWordpress, siDailymotion,
+  siKick, siRumble, siOdysee, siImdb, siDropbox, siFigma, siNpm,
+  siHuggingface, siArxiv, siPixiv,
+} from "simple-icons";
 import { LinkPreview } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -33,7 +43,125 @@ const iframeAllow =
 // that check, so a scaled player loads but never starts.
 const BLEED_PX = 2;
 
+// --- Space-to-pause --------------------------------------------------------
+// While an inline player is open, Space should control its playback instead of
+// scrolling the feed — the behavior a focused media player gives you, extended
+// to the whole document so it works without first clicking into the iframe.
+//
+// The player is a cross-origin document we can't call into directly. For
+// YouTube we drive it through the IFrame Player API over postMessage (the embed
+// URL carries `enablejsapi=1`); `activeYouTube` is the most recently started
+// YouTube player, the one Space targets when several share the page. Twitch's
+// raw player iframe has no supported postMessage control, so EmbedPlayer focuses
+// it on load and lets the player's own Space handler take over — it never
+// registers here.
+
+type YouTubeControl = { toggle: () => void };
+
+let activeYouTube: YouTubeControl | null = null;
+let spaceListenerAttached = false;
+
+// Elements that already do something with Space (form fields, buttons,
+// editable text). When one of these is focused we leave Space alone so we don't
+// swallow a button activation or a space typed into a field.
+function consumesSpace(el: EventTarget | null): boolean {
+  if (!(el instanceof HTMLElement)) return false;
+  if (el.isContentEditable) return true;
+  if (["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A", "SUMMARY", "OPTION"].includes(el.tagName))
+    return true;
+  const role = el.getAttribute("role");
+  return !!role && ["button", "checkbox", "switch", "menuitem", "tab", "radio"].includes(role);
+}
+
+function onSpaceKeydown(e: KeyboardEvent) {
+  if (e.code !== "Space" && e.key !== " ") return;
+  if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.altKey) return;
+  if (!activeYouTube || consumesSpace(e.target)) return;
+  // Reaching here means focus is on our page (when the iframe itself holds
+  // focus YouTube handles Space and the event never crosses into this document)
+  // and the page would otherwise scroll — so take over.
+  e.preventDefault();
+  activeYouTube.toggle();
+}
+
+function registerYouTube(control: YouTubeControl) {
+  activeYouTube = control;
+  if (!spaceListenerAttached) {
+    window.addEventListener("keydown", onSpaceKeydown);
+    spaceListenerAttached = true;
+  }
+}
+
+function unregisterYouTube(control: YouTubeControl) {
+  if (activeYouTube === control) activeYouTube = null;
+}
+
 function EmbedPlayer({ embed }: { embed: Embed }) {
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+
+  useEffect(() => {
+    const iframe = iframeRef.current;
+    if (!iframe) return;
+
+    if (embed.provider !== "youtube") {
+      // No postMessage control for the Twitch player, so move keyboard focus
+      // into it once it loads: its native Space-to-pause then works and the page
+      // no longer scrolls. preventScroll keeps the focus from yanking the feed.
+      const onLoad = () => iframe.focus({ preventScroll: true });
+      iframe.addEventListener("load", onLoad);
+      return () => iframe.removeEventListener("load", onLoad);
+    }
+
+    const command = (func: string) =>
+      iframe.contentWindow?.postMessage(
+        JSON.stringify({ event: "command", func, args: "" }),
+        "*",
+      );
+
+    // Mirror the player's real state so the toggle stays correct even after the
+    // viewer pauses/plays with the player's own controls. autoplay=1 means it
+    // starts playing; the state feed below corrects this if autoplay is blocked.
+    let playing = true;
+    const toggle = () => {
+      command(playing ? "pauseVideo" : "playVideo");
+      playing = !playing;
+    };
+
+    const onMessage = (e: MessageEvent) => {
+      if (e.source !== iframe.contentWindow || typeof e.data !== "string") return;
+      let data: { info?: number | { playerState?: number } };
+      try {
+        data = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      // `onStateChange` delivers the state as a bare number, `infoDelivery`
+      // nests it under `info.playerState`. 1 = playing, 3 = buffering (about to
+      // play) — both mean the next Space should pause.
+      const info = data.info;
+      const state = typeof info === "number" ? info : info?.playerState;
+      if (typeof state === "number") playing = state === 1 || state === 3;
+    };
+    window.addEventListener("message", onMessage);
+
+    // The IFrame API only starts emitting state events after this handshake.
+    const onLoad = () =>
+      iframe.contentWindow?.postMessage(
+        JSON.stringify({ event: "listening", id: 1 }),
+        "*",
+      );
+    iframe.addEventListener("load", onLoad);
+
+    const control: YouTubeControl = { toggle };
+    registerYouTube(control);
+
+    return () => {
+      iframe.removeEventListener("load", onLoad);
+      window.removeEventListener("message", onMessage);
+      unregisterYouTube(control);
+    };
+  }, [embed.provider]);
+
   return (
     // `clip-path` rounds the player's top corners to match the card. The card's
     // own `overflow-hidden rounded-xl` can't: Chrome won't apply a rounded
@@ -50,6 +178,7 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
       }}
     >
       <iframe
+        ref={iframeRef}
         src={embed.src}
         title={embed.title}
         style={{
@@ -94,7 +223,9 @@ function getEmbed(url: string): Embed | null {
       // no engagement, so Safari refuses to autoplay it. Plain autoplay (no
       // mute) then plays with sound where allowed (Chrome, engaged Safari).
       return {
-        src: `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1`,
+        // `enablejsapi=1` lets us drive the player over postMessage (the IFrame
+        // Player API) so Space can pause/resume it — see EmbedPlayer.
+        src: `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1&enablejsapi=1`,
         title: "YouTube video player",
         provider: "youtube",
       };
@@ -135,6 +266,63 @@ function getEmbed(url: string): Embed | null {
   return null;
 }
 
+// The footer marks the source with the site's real brand icon (simple-icons)
+// instead of its domain name. Icons are keyed by the domain's brand label — the
+// segment before the TLD — so subdomains resolve too (clips.twitch.tv → twitch,
+// open.spotify.com → spotify, news.ycombinator.com → ycombinator). Aliases cover
+// brands whose label differs from their icon (youtu.be, twitter.com → x, …).
+type BrandIcon = { title: string; hex: string; path: string };
+
+const BRAND_BY_LABEL: Record<string, BrandIcon> = {
+  youtube: siYoutube, youtu: siYoutube,
+  twitch: siTwitch,
+  x: siX, twitter: siX,
+  github: siGithub, gitlab: siGitlab,
+  reddit: siReddit, vimeo: siVimeo,
+  spotify: siSpotify, soundcloud: siSoundcloud,
+  tiktok: siTiktok, instagram: siInstagram,
+  facebook: siFacebook, fb: siFacebook,
+  discord: siDiscord, medium: siMedium, substack: siSubstack,
+  bilibili: siBilibili, niconico: siNiconico, nicovideo: siNiconico,
+  steam: siSteam, steampowered: siSteam,
+  bandcamp: siBandcamp, patreon: siPatreon,
+  threads: siThreads, bsky: siBluesky, bluesky: siBluesky,
+  mastodon: siMastodon, wikipedia: siWikipedia,
+  apple: siApplemusic,
+  pinterest: siPinterest, tumblr: siTumblr, snapchat: siSnapchat,
+  netflix: siNetflix, ycombinator: siYcombinator,
+  notion: siNotion, stackoverflow: siStackoverflow, wordpress: siWordpress,
+  dailymotion: siDailymotion, kick: siKick, rumble: siRumble,
+  odysee: siOdysee, imdb: siImdb, dropbox: siDropbox, figma: siFigma,
+  npmjs: siNpm, huggingface: siHuggingface, arxiv: siArxiv, pixiv: siPixiv,
+};
+
+function brandIconFor(host: string): BrandIcon | null {
+  if (!host) return null;
+  // Apple Music and Apple Podcasts share apple.com, so the label alone can't
+  // tell them apart — disambiguate by subdomain before the generic lookup.
+  if (host.endsWith("podcasts.apple.com")) return siApplepodcasts;
+  const parts = host.split(".");
+  const label = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+  return BRAND_BY_LABEL[label] ?? null;
+}
+
+// A simple-icons path rendered in the brand's own color (no hover transition).
+function BrandMark({ icon, className }: { icon: BrandIcon; className?: string }) {
+  return (
+    <svg
+      role="img"
+      viewBox="0 0 24 24"
+      aria-label={icon.title}
+      style={{ fill: `#${icon.hex}` }}
+      className={cn("h-4 w-4 shrink-0", className)}
+    >
+      <title>{icon.title}</title>
+      <path d={icon.path} />
+    </svg>
+  );
+}
+
 export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; priority?: boolean }) {
   const [playing, setPlaying] = useState(false);
   const [thumbFit, setThumbFit] = useState<"cover" | "contain" | null>(null);
@@ -155,6 +343,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
 
   const host = hostOf(preview.url);
   const site = preview.site_name ?? host;
+  const brand = brandIconFor(host);
   const embed = getEmbed(preview.url);
   const isYoutube = embed?.provider === "youtube";
 
@@ -245,12 +434,6 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
         rel="noopener noreferrer"
         className={cn("flex flex-col gap-1 p-3", media && "border-t border-border")}
       >
-        {/* Site name */}
-        <div className="flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted-foreground">
-          <ExternalLink className="h-3 w-3 shrink-0" />
-          <span className="truncate">{site}</span>
-        </div>
-
         {/* Title (for x.com this is the tweet content) */}
         {preview.title && (
           <p className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
@@ -258,12 +441,23 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
           </p>
         )}
 
-        {/* Channel / creator / author */}
-        {preview.author && (
-          <p className="truncate text-sm text-muted-foreground">
-            By <span className="font-medium">{preview.author}</span>
-          </p>
-        )}
+        {/* Footer row, left-aligned: the source site's brand logo leads
+            (standing in for "By"), then the author. With no author the logo
+            sits alone in this same spot rather than pinned to the right. An
+            unmapped site falls back to the literal "By" before an author, or to
+            the domain text on its own. */}
+        <div className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
+          {preview.author ? (
+            <>
+              {brand ? <BrandMark icon={brand} /> : <span className="shrink-0">By</span>}
+              <span className="min-w-0 truncate font-medium">{preview.author}</span>
+            </>
+          ) : brand ? (
+            <BrandMark icon={brand} />
+          ) : (
+            <span className="shrink-0 font-medium">{site}</span>
+          )}
+        </div>
       </a>
     </div>
   );
