@@ -307,18 +307,34 @@ function brandIconFor(host: string): BrandIcon | null {
   return BRAND_BY_LABEL[label] ?? null;
 }
 
+// simple-icons each fill their 24×24 viewBox per the brand's own guidelines, so
+// they aren't optically size-normalized against each other. This can't be fixed
+// automatically from the bounding box: a filled circle (Spotify) and a sparse X
+// both span the full box yet read as different sizes, so normalizing by bbox
+// extent just shrinks every full-bleed mark. Optical size is a per-shape call —
+// so we only nudge the rare outlier. X is the classic one (its angular mark
+// reads large); add a brand here if another ever looks off. Keyed by icon title
+// (twitter.com and x.com both resolve to "X").
+const OPTICAL_SCALE: Record<string, number> = {
+  X: 0.82,
+};
+
 // A simple-icons path rendered in the brand's own color (no hover transition).
 function BrandMark({ icon, className }: { icon: BrandIcon; className?: string }) {
+  const scale = OPTICAL_SCALE[icon.title] ?? 1;
   return (
     <svg
       role="img"
       viewBox="0 0 24 24"
       aria-label={icon.title}
       style={{ fill: `#${icon.hex}` }}
-      className={cn("h-4 w-4 shrink-0", className)}
+      className={cn("size-3.5 shrink-0", className)}
     >
       <title>{icon.title}</title>
-      <path d={icon.path} />
+      <path
+        d={icon.path}
+        transform={scale === 1 ? undefined : `translate(12 12) scale(${scale}) translate(-12 -12)`}
+      />
     </svg>
   );
 }
