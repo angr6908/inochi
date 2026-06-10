@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Play, ExternalLink } from "lucide-react";
 import { LinkPreview } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -19,87 +19,49 @@ type Embed = { src: string; title: string; provider: EmbedProvider };
 const iframeAllow =
   "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen";
 
+// The embedded player paints its own page background (black) behind the video.
+// The wrapper is an exact 16:9 box, but the iframe's fractional dimensions and
+// the player's own internal layout round to device pixels independently, and
+// that mismatch leaves a 1px black seam on one edge. Which edge differs by
+// browser (Safari: left/right, Chrome: top/bottom). The player is a
+// cross-origin document, so the seam can't be removed by styling its contents.
+// Instead we grow the iframe a few pixels past the box on every side and clip
+// the overflow, so the seam always lands in the clipped margin and never shows.
+// The clipped bleed crops only a sub-percent sliver of video. We grow it with
+// plain width/height, NOT `transform: scale()`: Twitch gates autoplay on the
+// player's rendered "style visibility" and treats a scaled iframe as failing
+// that check, so a scaled player loads but never starts.
+const BLEED_PX = 2;
+
 function EmbedPlayer({ embed }: { embed: Embed }) {
-  const wrapperRef = useRef<HTMLDivElement | null>(null);
-  const [viewport, setViewport] = useState<{
-    width: number;
-    height: number;
-    scale: number;
-  } | null>(null);
-  const useScaledViewport = embed.provider === "twitch";
-
-  useLayoutEffect(() => {
-    const wrapper = wrapperRef.current;
-    if (!wrapper) return;
-
-    const updateHeight = () => {
-      const width = wrapper.getBoundingClientRect().width;
-      if (width <= 0) return;
-
-      const viewportWidth = useScaledViewport ? Math.ceil(width / 16) * 16 : width;
-      const nextViewport = useScaledViewport
-        ? {
-            width: viewportWidth,
-            height: (viewportWidth / 16) * 9,
-            scale: width / viewportWidth,
-          }
-        : {
-            width,
-            height: Math.max(1, Math.floor((width * 9) / 16)),
-            scale: 1,
-          };
-      setViewport((current) =>
-        current &&
-        current.width === nextViewport.width &&
-        current.height === nextViewport.height &&
-        Math.abs(current.scale - nextViewport.scale) < 0.000001
-          ? current
-          : nextViewport
-      );
-    };
-
-    updateHeight();
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", updateHeight);
-      return () => window.removeEventListener("resize", updateHeight);
-    }
-
-    const resizeObserver = new ResizeObserver(updateHeight);
-    resizeObserver.observe(wrapper);
-    return () => resizeObserver.disconnect();
-  }, [useScaledViewport]);
-
   return (
+    // `clip-path` rounds the player's top corners to match the card. The card's
+    // own `overflow-hidden rounded-xl` can't: Chrome won't apply a rounded
+    // ancestor clip across into YouTube's hardware-accelerated player layer, so
+    // its square black corners poke through. A `clip-path` mask on the wrapper
+    // clips that layer directly. The radius is the card's outer radius minus its
+    // 1px border (this wrapper sits just inside that border), tracking
+    // `--radius-xl` rather than hardcoding a pixel value.
     <div
-      ref={wrapperRef}
-      className={cn(
-        "relative w-full overflow-hidden bg-transparent",
-        (useScaledViewport || !viewport) && "aspect-video"
-      )}
-      style={!useScaledViewport && viewport ? { height: viewport.height } : undefined}
+      className="relative aspect-video w-full overflow-hidden bg-transparent"
+      style={{
+        clipPath:
+          "inset(0 round calc(var(--radius-xl) - 1px) calc(var(--radius-xl) - 1px) 0 0)",
+      }}
     >
-      {viewport && (
-        <iframe
-          src={embed.src}
-          title={embed.title}
-          width={viewport.width}
-          height={viewport.height}
-          style={
-            useScaledViewport
-              ? {
-                  width: viewport.width,
-                  height: viewport.height,
-                  transform: `scale(${viewport.scale})`,
-                  transformOrigin: "top left",
-                }
-              : { width: "100%", height: viewport.height }
-          }
-          className="absolute top-0 left-0 block border-0 bg-transparent"
-          allow={iframeAllow}
-          allowFullScreen
-        />
-      )}
+      <iframe
+        src={embed.src}
+        title={embed.title}
+        style={{
+          top: -BLEED_PX,
+          left: -BLEED_PX,
+          width: `calc(100% + ${BLEED_PX * 2}px)`,
+          height: `calc(100% + ${BLEED_PX * 2}px)`,
+        }}
+        className="absolute block border-0 bg-transparent"
+        allow={iframeAllow}
+        allowFullScreen
+      />
     </div>
   );
 }
@@ -126,8 +88,13 @@ function getEmbed(url: string): Embed | null {
       if (m) id = m[1];
     }
     if (id)
+      // Embed youtube.com, NOT youtube-nocookie.com. Safari grants unmuted
+      // autoplay per-origin from the viewer's media-engagement history, which
+      // they build on youtube.com — a nocookie embed is a separate origin with
+      // no engagement, so Safari refuses to autoplay it. Plain autoplay (no
+      // mute) then plays with sound where allowed (Chrome, engaged Safari).
       return {
-        src: `https://www.youtube-nocookie.com/embed/${id}?autoplay=1&playsinline=1`,
+        src: `https://www.youtube.com/embed/${id}?autoplay=1&playsinline=1`,
         title: "YouTube video player",
         provider: "youtube",
       };
@@ -136,6 +103,9 @@ function getEmbed(url: string): Embed | null {
   // Twitch — channel (live), VOD, or clip
   if (host === "twitch.tv" || host.endsWith(".twitch.tv")) {
     const parts = u.pathname.split("/").filter(Boolean);
+    // Twitch force-mutes autoplay for embedded clips regardless of any `muted`
+    // param (a clip's audio can only be enabled by the viewer via the player's
+    // own unmute control), so we don't bother trying to override it.
     if (host.startsWith("clips.") && parts[0])
       return {
         src: `https://clips.twitch.tv/embed?clip=${parts[0]}&parent=${parent}&autoplay=true`,
