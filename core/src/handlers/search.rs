@@ -1,7 +1,7 @@
 use axum::{extract::{Query, State}, Json};
 
 use crate::db::Db;
-use crate::handlers::posts::{posts_page, query_ids};
+use crate::handlers::posts::{posts_page, query_ids, thread_cte, thread_ordered_select};
 use crate::models::*;
 
 pub async fn search_posts(
@@ -15,6 +15,7 @@ pub async fn search_posts(
             total: 0,
             page: 1,
             pages: 0,
+            matches: None,
         }));
     }
 
@@ -25,22 +26,39 @@ pub async fn search_posts(
 
     let conn = db.lock().unwrap();
 
+    // Posts that actually match the query. The thread CTE expands these to whole
+    // threads (for context); `matches` counts just these so the UI can report
+    // real hits rather than the inflated thread total used for pagination.
+    let matched = "SELECT p.id FROM posts p
+         LEFT JOIN post_links pl ON pl.post_id = p.id
+         LEFT JOIN link_previews lp ON lp.id = pl.link_preview_id
+         WHERE p.content LIKE ?1
+            OR lp.title LIKE ?1
+            OR lp.description LIKE ?1
+            OR lp.site_name LIKE ?1
+            OR lp.author LIKE ?1
+            OR lp.url LIKE ?1";
+    let cte = thread_cte(matched);
+
     let total: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM posts WHERE content LIKE ?1",
+            &format!("{cte} SELECT COUNT(*) FROM thread"),
             [&pattern],
             |r| r.get(0),
         )
         .unwrap_or(0);
 
-    let post_ids = query_ids(
-        &conn,
-        &format!(
-            "SELECT id FROM posts WHERE content LIKE ?1 ORDER BY created_at DESC LIMIT {} OFFSET {}",
-            limit, offset
-        ),
-        [&pattern],
-    );
+    let matches: i64 = conn
+        .query_row(
+            &format!("SELECT COUNT(*) FROM (SELECT DISTINCT id FROM ({matched}))"),
+            [&pattern],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
 
-    Ok(Json(posts_page(&conn, &post_ids, total, page, limit)))
+    let post_ids = query_ids(&conn, &thread_ordered_select(&cte, limit, offset), [&pattern]);
+
+    let mut resp = posts_page(&conn, &post_ids, total, page, limit);
+    resp.matches = Some(matches);
+    Ok(Json(resp))
 }

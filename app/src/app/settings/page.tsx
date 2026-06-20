@@ -12,10 +12,12 @@ import { Separator } from "@/components/ui/separator";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { toast } from "sonner";
 import { toastError } from "@/lib/utils";
+import { useTitle } from "@/lib/use-title";
 
 export default function SettingsPage() {
   const { user, signOut, refreshUser } = useAuth();
   const router = useRouter();
+  useTitle("Settings");
 
   // Username
   const [newUsername, setNewUsername] = useState("");

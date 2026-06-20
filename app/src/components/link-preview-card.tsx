@@ -419,17 +419,17 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
         rel="noopener noreferrer"
         className="block overflow-hidden bg-muted"
       >
-        {/* Reserve the OpenGraph-standard 1.91:1 box up front (via aspect-ratio,
-            which applies before the resource loads) so the card doesn't grow and
-            shove the content below it down once the image arrives. object-contain
-            keeps off-ratio images uncropped, letterboxed against the muted card. */}
+        {/* Reserve a 16:9 box up front (via aspect-ratio, which applies before
+            the resource loads) so the card doesn't grow and shove the content
+            below it down once the image arrives. object-contain keeps off-ratio
+            images uncropped, letterboxed against the muted card. */}
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={image ?? undefined}
           alt={preview.title ?? ""}
           loading={priority ? "eager" : "lazy"}
           fetchPriority={priority ? "high" : undefined}
-          className="aspect-[1.91/1] w-full object-contain"
+          className="aspect-video w-full object-contain"
         />
       </a>
     );

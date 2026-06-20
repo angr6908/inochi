@@ -6,13 +6,17 @@ import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 
 const TOKEN = /(https?:\/\/[^\s<>()\[\]{}"']+)|(#[\p{L}\p{N}_]+)|:([a-zA-Z0-9_]+):/gu;
 
-export const PostContent = memo(function PostContent({ content }: { content: string }) {
-  const [emojis, setEmojis] = useState<Emoji[]>(cachedEmojis() ?? []);
+export const PostContent = memo(function PostContent({ content, priority }: { content: string; priority?: boolean }) {
+  const [emojis, setEmojis] = useState<Emoji[]>(() => cachedEmojis() ?? []);
+  const [loaded, setLoaded] = useState<boolean>(() => cachedEmojis() != null);
 
   useEffect(() => {
-    if (cachedEmojis()) return;
     let active = true;
-    loadEmojis().then((e) => active && setEmojis(e));
+    loadEmojis().then((e) => {
+      if (!active) return;
+      setEmojis(e);
+      setLoaded(true);
+    });
     return () => {
       active = false;
     };
@@ -64,7 +68,9 @@ export const PostContent = memo(function PostContent({ content }: { content: str
           const url = emojiUrl.get(m[3]);
           if (url) {
             // eslint-disable-next-line @next/next/no-img-element
-            out.push(<img key={key++} src={url} alt={m[3]} className="inline-block h-5 w-5 align-text-bottom" />);
+            out.push(<img key={key++} src={url} alt={m[3]} loading={priority ? "eager" : undefined} fetchPriority={priority ? "high" : undefined} className="inline-block h-5 w-5 align-text-bottom" />);
+          } else if (!loaded) {
+            out.push(<span key={key++} aria-hidden className="inline-block h-5 w-5 align-text-bottom" />);
           } else {
             out.push(m[0]);
           }
@@ -84,12 +90,12 @@ export const PostContent = memo(function PostContent({ content }: { content: str
           renderLine(line, nodes);
         });
         return (
-          <p key={pi} className="mb-2 break-words last:mb-0 leading-relaxed">
+          <p key={pi} className="mb-2 whitespace-pre-wrap break-words last:mb-0 leading-relaxed">
             {nodes}
           </p>
         );
       });
-  }, [content, emojiUrl]);
+  }, [content, emojiUrl, priority, loaded]);
 
   return <>{rendered}</>;
 });

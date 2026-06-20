@@ -10,7 +10,7 @@ export interface Post {
   username: string;
   parent_post_id: string | null;
   root_post_id: string;
-  parent_post: { id: string; username: string; content: string; created_at: string; link_previews: LinkPreview[] } | null;
+  parent_post: { id: string; username: string; content: string; created_at: string; images: { id: string; url: string; width: number | null; height: number | null }[]; link_previews: LinkPreview[] } | null;
   content: string;
   images: { id: string; url: string; width: number | null; height: number | null }[];
   link_previews: LinkPreview[];
@@ -119,26 +119,57 @@ export const deletePost = (id: string) =>
 export const getEmojis = () => request<{ emojis: Emoji[] }>("/api/emojis");
 
 // Custom emojis change rarely, so the first fetch is cached process-wide and
-// shared by every caller (post rendering, the emoji picker).
+// shared by every caller (post rendering, the emoji picker). The last-known list
+// is also persisted to localStorage so a hard refresh can render emoji images on
+// the first paint (from cache) instead of flashing their `:shortcode:` text.
+const EMOJI_STORE_KEY = "inochi:emojis";
 let emojiCache: Emoji[] | null = null;
 let emojiPromise: Promise<Emoji[]> | null = null;
+let storedEmojis: Emoji[] | null | undefined;
+
+function readStoredEmojis(): Emoji[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(EMOJI_STORE_KEY);
+    return raw ? (JSON.parse(raw) as Emoji[]) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Cached, de-duplicated fetch of the custom emoji list (never rejects). */
 export function loadEmojis(): Promise<Emoji[]> {
   if (emojiCache) return Promise.resolve(emojiCache);
   if (!emojiPromise) {
     emojiPromise = getEmojis()
-      .then((r) => (emojiCache = r.emojis))
+      .then((r) => {
+        emojiCache = r.emojis;
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.setItem(EMOJI_STORE_KEY, JSON.stringify(r.emojis));
+          } catch {
+            // private mode / quota — fine to skip the cache write
+          }
+        }
+        return emojiCache;
+      })
       .catch(() => {
         emojiPromise = null;
-        return [];
+        return emojiCache ?? readStoredEmojis() ?? [];
       });
   }
   return emojiPromise;
 }
 
-/** Already-loaded emojis, or null before the first successful load. */
-export const cachedEmojis = (): Emoji[] | null => emojiCache;
+/**
+ * Best already-available emoji list for an instant first render: the fetched
+ * list, else the persisted one, else null before anything is known.
+ */
+export const cachedEmojis = (): Emoji[] | null => {
+  if (emojiCache) return emojiCache;
+  if (storedEmojis === undefined) storedEmojis = readStoredEmojis();
+  return storedEmojis;
+};
 
 export const uploadEmoji = (formData: FormData) =>
   request<{ emoji: Emoji }>("/api/emojis", { method: "POST", body: formData });
@@ -148,7 +179,7 @@ export const deleteEmoji = (id: string) =>
 
 // Search
 export const searchPosts = (q: string, page = 1, limit = 20) =>
-  request<{ posts: Post[]; total: number; page: number; pages: number }>(
+  request<{ posts: Post[]; total: number; page: number; pages: number; matches?: number }>(
     `/api/search?q=${encodeURIComponent(q)}&page=${page}&limit=${limit}`
   );
 

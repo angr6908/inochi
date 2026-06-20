@@ -66,6 +66,37 @@ pub(crate) fn query_ids<P: rusqlite::Params>(
         .collect()
 }
 
+pub(crate) fn thread_cte(matched_sql: &str) -> String {
+    format!(
+        "WITH RECURSIVE
+         matched(id) AS ({matched_sql}),
+         ancestors(id, parent_post_id) AS (
+           SELECT p.id, p.parent_post_id FROM posts p WHERE p.id IN (SELECT id FROM matched)
+           UNION
+           SELECT p.id, p.parent_post_id FROM posts p JOIN ancestors a ON p.id = a.parent_post_id
+         ),
+         roots(id) AS (SELECT id FROM ancestors WHERE parent_post_id IS NULL),
+         thread(id, root) AS (
+           SELECT id, id FROM roots
+           UNION
+           SELECT p.id, t.root FROM posts p JOIN thread t ON p.parent_post_id = t.id
+         )"
+    )
+}
+
+pub(crate) fn thread_ordered_select(cte: &str, limit: u32, offset: u32) -> String {
+    format!(
+        "{cte}
+         SELECT p.id FROM thread th
+         JOIN posts p ON p.id = th.id
+         JOIN (SELECT t2.root AS root, MAX(p2.created_at) AS last_at
+               FROM thread t2 JOIN posts p2 ON p2.id = t2.id GROUP BY t2.root) tr
+           ON tr.root = th.root
+         ORDER BY tr.last_at DESC, th.root, p.created_at DESC
+         LIMIT {limit} OFFSET {offset}"
+    )
+}
+
 fn check_post_owner(
     conn: &rusqlite::Connection,
     post_id: &str,
@@ -172,6 +203,23 @@ pub async fn backfill_imported_previews(db: &Db) -> usize {
     processed
 }
 
+fn fetch_images(db: &rusqlite::Connection, post_id: &str) -> Vec<ImageInfo> {
+    let mut stmt = db
+        .prepare("SELECT id, filename, width, height FROM post_images WHERE post_id = ?1 ORDER BY position")
+        .unwrap();
+    stmt.query_map([post_id], |r| {
+        Ok(ImageInfo {
+            id: r.get(0)?,
+            url: format!("/uploads/images/{}", r.get::<_, String>(1)?),
+            width: r.get(2)?,
+            height: r.get(3)?,
+        })
+    })
+    .unwrap()
+    .filter_map(|r| r.ok())
+    .collect()
+}
+
 fn fetch_link_previews(db: &rusqlite::Connection, post_id: &str) -> Vec<LinkPreviewInfo> {
     let mut stmt = db
         .prepare(
@@ -233,21 +281,7 @@ pub fn build_post(db: &rusqlite::Connection, post_id: &str) -> Option<PostRespon
     };
 
     // Images
-    let mut stmt = db
-        .prepare("SELECT id, filename, width, height FROM post_images WHERE post_id = ?1 ORDER BY position")
-        .unwrap();
-    let images: Vec<ImageInfo> = stmt
-        .query_map([&id], |r| {
-            Ok(ImageInfo {
-                id: r.get(0)?,
-                url: format!("/uploads/images/{}", r.get::<_, String>(1)?),
-                width: r.get(2)?,
-                height: r.get(3)?,
-            })
-        })
-        .unwrap()
-        .filter_map(|r| r.ok())
-        .collect();
+    let images = fetch_images(db, &id);
 
     // Tags
     let mut stmt = db
@@ -283,12 +317,14 @@ pub fn build_post(db: &rusqlite::Connection, post_id: &str) -> Option<PostRespon
                     username: r.get(1)?,
                     content: r.get(2)?,
                     created_at: r.get(3)?,
+                    images: Vec::new(),
                     link_previews: Vec::new(),
                 })
             },
         )
         .ok()
         .map(|mut p: ParentPostSummary| {
+            p.images = fetch_images(db, &p.id);
             p.link_previews = fetch_link_previews(db, &p.id);
             p
         })
@@ -329,6 +365,7 @@ pub fn posts_page(
         total,
         page,
         pages,
+        matches: None,
     }
 }
 
@@ -346,12 +383,12 @@ pub async fn list_posts(
     // just like a non-empty one, so both queries take the same path.
     let (count_sql, list_sql, params): (String, String, Vec<Box<dyn rusqlite::types::ToSql>>) =
         if let Some(ref tag) = query.tag {
+            let cte = thread_cte(
+                "SELECT p.id FROM posts p JOIN post_tags pt ON p.id = pt.post_id WHERE pt.tag = ?1",
+            );
             (
-                "SELECT COUNT(DISTINCT p.id) FROM posts p JOIN post_tags pt ON p.id = pt.post_id WHERE pt.tag = ?1".into(),
-                format!(
-                    "SELECT DISTINCT p.id FROM posts p JOIN post_tags pt ON p.id = pt.post_id WHERE pt.tag = ?1 ORDER BY p.created_at DESC LIMIT {} OFFSET {}",
-                    limit, offset
-                ),
+                format!("{cte} SELECT COUNT(*) FROM thread"),
+                thread_ordered_select(&cte, limit, offset),
                 vec![Box::new(tag.to_lowercase())],
             )
         } else {
@@ -410,8 +447,8 @@ pub async fn create_post(
         }
     }
 
-    if content.trim().is_empty() {
-        return Err(err(StatusCode::BAD_REQUEST, "Content is required"));
+    if content.trim().is_empty() && images.is_empty() {
+        return Err(err(StatusCode::BAD_REQUEST, "Content or an image is required"));
     }
 
     // Save each image in its original format (fast); AVIF conversion happens in

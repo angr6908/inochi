@@ -5,13 +5,14 @@ import { useSearchParams } from "next/navigation";
 import { getPosts, Post } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { consumeHomeLogoReset } from "@/lib/home-reset";
-import { cn } from "@/lib/utils";
-import { PostCard } from "@/components/post-card";
+import { useTitle } from "@/lib/use-title";
+import { PostFeed } from "@/components/post-feed";
 import { PostEditor } from "@/components/post-editor";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PostListSkeleton } from "@/components/post-list-skeleton";
 import { PostPagination } from "@/components/post-pagination";
 import { preloadHigh, preloadImages } from "@/lib/image-loader";
+import { firstPostMediaUrls, pageImageUrls } from "@/lib/post-media";
 
 interface HomeCache {
   tag: string | undefined;
@@ -48,29 +49,6 @@ function clearPageCache() {
   pageCache.clear();
 }
 
-function firstMediaUrl(posts: Post[]): string | undefined {
-  const first = posts[0];
-  if (!first) return undefined;
-  if (first.images[0]) return first.images[0].url;
-  for (const lp of first.link_previews) {
-    const thumb = lp.thumbnail ?? lp.image_url;
-    if (thumb) return thumb;
-  }
-  return undefined;
-}
-
-function pageImageUrls(posts: Post[]): string[] {
-  const urls: string[] = [];
-  for (const post of posts) {
-    for (const img of post.images) urls.push(img.url);
-    for (const lp of post.link_previews) {
-      const thumb = lp.thumbnail ?? lp.image_url;
-      if (thumb) urls.push(thumb);
-    }
-  }
-  return urls;
-}
-
 function prefetchNeighbors(page: number, tag: string | undefined, pages: number) {
   for (const p of [page + 1, page - 1]) {
     if (p < 1 || p > pages || pageCache.has(cacheKey(tag, p))) continue;
@@ -96,6 +74,7 @@ function HomeContent() {
   const [pages, setPages] = useState(snap?.pages ?? 0);
   const [loading, setLoading] = useState(!restore);
   const [activeTag, setActiveTag] = useState<string | undefined>(tagParam);
+  useTitle(activeTag ? `#${activeTag}` : undefined);
 
   const [prevTag, setPrevTag] = useState(tagParam);
   if (tagParam !== prevTag) {
@@ -132,8 +111,7 @@ function HomeContent() {
     // Cache hit → render instantly, no loading state or async swap.
     const cached = pageCache.get(cacheKey(tag, p));
     if (cached) {
-      const top = firstMediaUrl(cached.posts);
-      if (top) preloadHigh(top);
+      preloadHigh(...firstPostMediaUrls(cached.posts));
       setPosts(cached.posts);
       setPages(cached.pages);
       setPage(p);
@@ -147,8 +125,7 @@ function HomeContent() {
       const postsRes = await getPosts(p, 20, tag);
       if (myReq !== reqRef.current) return;
       pageCache.set(cacheKey(tag, postsRes.page), { posts: postsRes.posts, pages: postsRes.pages });
-      const top = firstMediaUrl(postsRes.posts);
-      if (top) preloadHigh(top);
+      preloadHigh(...firstPostMediaUrls(postsRes.posts));
       setPosts(postsRes.posts);
       setPages(postsRes.pages);
       setPage(postsRes.page);
@@ -226,37 +203,12 @@ function HomeContent() {
         )
       ) : (
         <>
-          <div>
-            {posts.map((post, i) => {
-              // In the reverse-chronological timeline a reply sits directly
-              // above the post it answers. When that parent is the very next
-              // card, its embedded reference card is redundant — hide it and
-              // merge the two cards into one connected thread.
-              const next = posts[i + 1];
-              const prev = posts[i - 1];
-              const repliesToNext = !!(
-                post.parent_post && next && post.parent_post.id === next.id
-              );
-              const continuesPrev = !!(
-                prev?.parent_post && prev.parent_post.id === post.id
-              );
-              return (
-                <PostCard
-                  key={post.id}
-                  post={post}
-                  priority={i === 0}
-                  hideParent={repliesToNext}
-                  onUpdate={() => { clearPageCache(); load(page, activeTag); }}
-                  className={cn(
-                    repliesToNext ? "mb-0" : "mb-4",
-                    i === posts.length - 1 && "mb-0",
-                    repliesToNext && "rounded-b-none border-b-0",
-                    continuesPrev && "rounded-t-none",
-                  )}
-                />
-              );
-            })}
-          </div>
+          <PostFeed
+            posts={posts}
+            surfaceEchoes
+            dedupeReferences={!!activeTag}
+            onUpdate={() => { clearPageCache(); load(page, activeTag); }}
+          />
           <PostPagination page={page} pages={pages} onChange={changePage} />
         </>
       )}

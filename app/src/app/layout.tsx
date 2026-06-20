@@ -8,6 +8,8 @@ import { Roboto, Noto_Sans_JP } from "next/font/google";
 import { cookies } from "next/headers";
 import "./globals.css";
 import { Providers } from "./providers";
+import { SITE_NAME, SITE_DESCRIPTION } from "@/lib/site";
+import { currentOrigin } from "@/lib/origin";
 
 const roboto = Roboto({
   subsets: ["latin"],
@@ -23,10 +25,37 @@ const notoSansJP = Noto_Sans_JP({
   display: "swap",
 });
 
-export const metadata: Metadata = {
-  title: "inochi",
-  description: "A minimal microblog",
-};
+export async function generateMetadata(): Promise<Metadata> {
+  const origin = await currentOrigin();
+  return {
+    metadataBase: new URL(origin),
+    title: SITE_NAME,
+    description: SITE_DESCRIPTION,
+    applicationName: SITE_NAME,
+    openGraph: {
+      type: "website",
+      siteName: SITE_NAME,
+      title: SITE_NAME,
+      description: SITE_DESCRIPTION,
+    },
+    twitter: {
+      card: "summary",
+      title: SITE_NAME,
+      description: SITE_DESCRIPTION,
+    },
+    robots: {
+      index: true,
+      follow: true,
+      googleBot: {
+        index: true,
+        follow: true,
+        "max-image-preview": "large",
+        "max-snippet": -1,
+        "max-video-preview": -1,
+      },
+    },
+  };
+}
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const authed = (await cookies()).get("auth")?.value === "1";

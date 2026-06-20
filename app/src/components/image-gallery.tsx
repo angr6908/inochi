@@ -1,13 +1,27 @@
 "use client";
 
-import { useRef, useState, type CSSProperties } from "react";
-import { Dialog, DialogContent, DialogTrigger } from "@/components/ui/dialog";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { ChevronLeft, ChevronRight, X } from "lucide-react";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+
+const viewerButton =
+  "flex items-center justify-center rounded-lg bg-black/40 text-white ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-black/60 hover:ring-white/30 focus:outline-none focus-visible:outline-none cursor-pointer";
 
 type GalleryImg = { id: string; url: string; width: number | null; height: number | null };
 
 const MAX_SINGLE_HEIGHT = 400;
 
-function GalleryImage({ image, single, priority }: { image: GalleryImg; single: boolean; priority?: boolean }) {
+function GalleryImage({
+  image,
+  single,
+  priority,
+  onClick,
+}: {
+  image: GalleryImg;
+  single: boolean;
+  priority?: boolean;
+  onClick?: () => void;
+}) {
   const [src, setSrc] = useState(image.url);
   const retried = useRef(false);
 
@@ -34,6 +48,7 @@ function GalleryImage({ image, single, priority }: { image: GalleryImg; single: 
       fetchPriority={priority ? "high" : undefined}
       decoding="async"
       style={style}
+      onClick={onClick}
       onError={() => {
         if (!retried.current) {
           retried.current = true;
@@ -53,23 +68,114 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(0);
 
+  const many = images.length > 1;
+
+  useEffect(() => {
+    if (!open || !many) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
+      e.preventDefault();
+      const dir = e.key === "ArrowRight" ? 1 : -1;
+      setSelected((s) => (s + dir + images.length) % images.length);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, many, images.length]);
+
   if (images.length === 0) return null;
 
   const single = images.length === 1;
+  const current = images[selected] ?? images[0];
+  const go = (dir: number) => setSelected((s) => (s + dir + images.length) % images.length);
 
   return (
-    <div className={`mt-2 grid gap-1 ${single ? "grid-cols-1" : "grid-cols-2"}`}>
-      {images.map((img, i) => (
-        <Dialog key={img.id} open={open && selected === i} onOpenChange={(o) => { setOpen(o); setSelected(i); }}>
-          <DialogTrigger>
-            <GalleryImage image={img} single={single} priority={priority} />
-          </DialogTrigger>
-          <DialogContent className="w-fit max-w-[95vw] border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-[95vw]">
+    <>
+      <div className={`mt-2 grid gap-1 ${single ? "grid-cols-1" : "grid-cols-2"}`}>
+        {images.map((img, i) => (
+          <GalleryImage
+            key={img.id}
+            image={img}
+            single={single}
+            priority={priority}
+            onClick={() => {
+              setSelected(i);
+              setOpen(true);
+            }}
+          />
+        ))}
+      </div>
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent
+          showCloseButton={false}
+          overlayClassName="bg-black/80 supports-backdrop-filter:backdrop-blur-sm"
+          className="flex w-fit max-w-[95vw] flex-col items-center gap-3 border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-[95vw]"
+        >
+          <DialogTitle className="sr-only">Image viewer</DialogTitle>
+
+          <div className="relative flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={img.url} alt="" decoding="async" className="max-h-[88vh] w-auto max-w-[95vw] rounded-md object-contain" />
-          </DialogContent>
-        </Dialog>
-      ))}
-    </div>
+            <img
+              src={current.url}
+              alt=""
+              decoding="async"
+              className="max-h-[80vh] w-auto max-w-[95vw] rounded-md object-contain"
+            />
+
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+              className={`${viewerButton} absolute top-2 right-2 z-10 size-9`}
+            >
+              <X className="size-[18px]" />
+            </button>
+
+            {many && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => go(-1)}
+                  aria-label="Previous image"
+                  className={`${viewerButton} absolute top-1/2 left-2 z-10 size-10 -translate-y-1/2`}
+                >
+                  <ChevronLeft className="size-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => go(1)}
+                  aria-label="Next image"
+                  className={`${viewerButton} absolute top-1/2 right-2 z-10 size-10 -translate-y-1/2`}
+                >
+                  <ChevronRight className="size-5" />
+                </button>
+              </>
+            )}
+          </div>
+
+          {many && (
+            <div className="flex max-w-[95vw] flex-wrap justify-center gap-2">
+              {images.map((img, i) => (
+                <button
+                  key={img.id}
+                  type="button"
+                  onClick={() => setSelected(i)}
+                  aria-label={`View image ${i + 1}`}
+                  aria-current={i === selected}
+                  className={`size-14 shrink-0 cursor-pointer overflow-hidden rounded-md transition-all focus-visible:outline-none ${
+                    i === selected
+                      ? "opacity-100 ring-2 ring-white"
+                      : "opacity-50 ring-1 ring-white/20 hover:opacity-90"
+                  }`}
+                >
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={img.url} alt="" decoding="async" className="size-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

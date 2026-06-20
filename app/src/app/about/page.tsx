@@ -1,13 +1,16 @@
 import type { Metadata } from "next";
-import { Separator } from "@/components/ui/separator";
+import { AboutRotator } from "./rotator";
 
 export const metadata: Metadata = {
   title: "About · inochi",
 };
 
+const version = process.env.NEXT_PUBLIC_APP_VERSION || "dev";
+const buildDate = process.env.NEXT_PUBLIC_BUILD_DATE || new Date().toISOString().slice(0, 10);
+
 export default function AboutPage() {
   return (
-    <article className="flex flex-col items-center gap-12 py-12 text-center">
+    <article className="flex min-h-[calc(100dvh-82px)] flex-col items-center gap-12 py-12 text-center">
       <header className="flex flex-col items-center gap-3">
         <span
           aria-hidden
@@ -24,20 +27,9 @@ export default function AboutPage() {
         </span>
       </header>
 
-      <div className="flex max-w-md flex-col gap-5">
-        <h1
-          className="text-2xl font-semibold leading-snug tracking-tight text-balance"
-          style={{ fontFamily: "var(--font-heading)" }}
-        >
-          How to escape from a prison called{" "}
-          <span className="text-primary">inochi</span>?
-        </h1>
-        <p className="text-base leading-relaxed text-muted-foreground text-balance">
-          It may be the last and greatest jailbreak for all humankind.
-        </p>
+      <div className="flex max-w-md flex-col">
+        <AboutRotator />
       </div>
-
-      <Separator className="w-12" />
 
       <div className="flex flex-col items-center gap-1.5">
         <span className="text-xs uppercase tracking-wide text-muted-foreground">
@@ -51,9 +43,16 @@ export default function AboutPage() {
         </a>
       </div>
 
-      <footer className="text-sm text-muted-foreground">
-        Built with <span className="text-primary">♡</span> and Claude Opus by{" "}
-        <span className="font-medium text-foreground">Prisoner</span>
+      <footer className="mt-auto flex flex-col items-center gap-2 text-sm text-muted-foreground">
+        <p>
+          Built with <span className="text-primary">♡</span> and Claude Opus by{" "}
+          <span className="font-medium text-foreground">Prisoner</span>
+        </p>
+        <p className="flex items-center gap-1.5 text-xs tracking-wide text-muted-foreground/60 tabular-nums">
+          <span>v{version}</span>
+          <span aria-hidden className="size-[2px] rounded-full bg-muted-foreground/40" />
+          <span>{buildDate}</span>
+        </p>
       </footer>
     </article>
   );

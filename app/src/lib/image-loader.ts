@@ -25,12 +25,14 @@ function pumpPreload() {
   img.src = target;
 }
 
-export function preloadHigh(url: string) {
-  if (preloaded.has(url)) return;
-  preloaded.add(url);
-  const img = new Image();
-  img.setAttribute("fetchpriority", "high");
-  img.src = url;
+export function preloadHigh(...urls: string[]) {
+  for (const url of urls) {
+    if (preloaded.has(url)) continue;
+    preloaded.add(url);
+    const img = new Image();
+    img.setAttribute("fetchpriority", "high");
+    img.src = url;
+  }
 }
 
 export function preloadImages(urls: string[], onDone?: () => void) {

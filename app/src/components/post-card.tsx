@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Post, updatePost, deletePost } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
@@ -47,10 +47,10 @@ function timeAgo(dateStr: string): string {
   ).padStart(2, "0")}`;
   const monDay = `${MONTHS[then.getMonth()]} ${then.getDate()}`;
 
-  // Under 12 hours → relative (hours, with minutes / "just now" below the hour).
+  // Under 12 hours → relative (hours, then minutes, then seconds below a minute).
   const diffMin = diffMs / 60000;
   if (diffMin < 12 * 60) {
-    if (diffMin < 1) return "just now";
+    if (diffMin < 1) return `${Math.max(0, Math.floor(diffMs / 1000))}s`;
     if (diffMin < 60) return `${Math.floor(diffMin)}m`;
     return `${Math.floor(diffMin / 60)}h`;
   }
@@ -66,6 +66,28 @@ function timeAgo(dateStr: string): string {
   // Earlier this year → "Mon D HH:MM"; previous years prefix the year.
   if (then.getFullYear() === now.getFullYear()) return `${monDay} ${hhmm}`;
   return `${then.getFullYear()} ${monDay} ${hhmm}`;
+}
+
+function TimeAgo({ date }: { date: string }) {
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const then = new Date(date + "Z").getTime();
+    let timer: ReturnType<typeof setTimeout>;
+    const schedule = () => {
+      const age = Date.now() - then;
+      if (age >= 12 * 60 * 60 * 1000) return;
+      const next = age < 60_000 ? 1000 : 60_000 - (age % 60_000);
+      timer = setTimeout(() => {
+        setTick((t) => t + 1);
+        schedule();
+      }, next);
+    };
+    schedule();
+    return () => clearTimeout(timer);
+  }, [date]);
+
+  return <>{timeAgo(date)}</>;
 }
 
 interface PostCardProps {
@@ -85,14 +107,18 @@ interface PostCardProps {
   className?: string;
   /** Above-the-fold hint — eager-load this card's media (the first post in the feed). */
   priority?: boolean;
+  /** Move the echo action into the actions menu instead of a standalone button (feed views). */
+  echoInMenu?: boolean;
 }
 
-export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onDelete, className, priority }: PostCardProps) {
+export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onDelete, className, priority, echoInMenu }: PostCardProps) {
   const { user } = useAuth();
   const router = useRouter();
   const isOwner = user?.id === post.user_id;
   const hasFollowups = post.followup_count > 0;
   const sameAuthor = post.parent_post?.username === post.username;
+  const showReference = !hideParent && !!post.parent_post;
+  const hideOwnUsername = hideUsername || (showReference && sameAuthor);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
@@ -145,7 +171,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
         {/* Header */}
         <div className="mb-2 flex items-center gap-1.5 text-sm">
           <span className="flex items-center gap-1.5">
-            {!hideUsername && (
+            {!hideOwnUsername && (
               <>
                 <span className="font-medium leading-none">{post.username}</span>
                 {/* A flex-centered square rather than a "·" glyph: the middle-dot
@@ -156,7 +182,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
               </>
             )}
             <span className="text-xs leading-none text-muted-foreground">
-              {timeAgo(post.created_at)}
+              <TimeAgo date={post.created_at} />
             </span>
           </span>
 
@@ -171,23 +197,26 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
           <div className="-my-1.5 ml-auto flex items-center gap-0.5">
             {/* The echo button opens an inline composer for this post on the
                 thread page, or navigates to its root thread (and opens the
-                composer there) from anywhere else. */}
-            <Button
-              variant="ghost"
-              size="sm"
-              type="button"
-              aria-label="Echo"
-              title="Echo"
-              onClick={handleEcho}
-              className="h-7 gap-1 px-2 text-muted-foreground hover:text-foreground"
-            >
-              <Reply className="size-4" />
-              {hasFollowups && (
-                <span className="text-xs tabular-nums">{post.followup_count}</span>
-              )}
-            </Button>
+                composer there) from anywhere else. In feed views it lives in
+                the actions menu instead. */}
+            {!echoInMenu && (
+              <Button
+                variant="ghost"
+                size="sm"
+                type="button"
+                aria-label="Echo"
+                title="Echo"
+                onClick={handleEcho}
+                className="h-7 gap-1 px-2 text-muted-foreground hover:text-foreground"
+              >
+                <Reply className="size-4" />
+                {hasFollowups && (
+                  <span className="text-xs tabular-nums">{post.followup_count}</span>
+                )}
+              </Button>
+            )}
 
-            {isOwner && (
+            {(isOwner || echoInMenu) && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -202,19 +231,34 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
                   <MoreHorizontal className="size-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-32">
-                  <DropdownMenuItem
-                    onClick={() => {
-                      setEditContent(post.content);
-                      setEditOpen(true);
-                    }}
-                  >
-                    <Pencil className="size-4" />
-                    Edit
-                  </DropdownMenuItem>
-                  <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
-                    <Trash2 className="size-4" />
-                    Delete
-                  </DropdownMenuItem>
+                  {echoInMenu && (
+                    <DropdownMenuItem onClick={handleEcho}>
+                      <Reply className="size-4" />
+                      Echo
+                      {hasFollowups && (
+                        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                          {post.followup_count}
+                        </span>
+                      )}
+                    </DropdownMenuItem>
+                  )}
+                  {isOwner && (
+                    <>
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setEditContent(post.content);
+                          setEditOpen(true);
+                        }}
+                      >
+                        <Pencil className="size-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
+                        <Trash2 className="size-4" />
+                        Delete
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
@@ -223,7 +267,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
 
         {/* Content */}
         <div className="font-content text-base leading-relaxed">
-          <PostContent content={post.content} />
+          <PostContent content={post.content} priority={priority} />
         </div>
 
         {/* Images */}
@@ -246,19 +290,20 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
               className="absolute inset-0 z-10"
             />
             <div className="mb-1.5 flex items-center gap-1.5 text-sm">
-              {!sameAuthor && (
-                <>
-                  <span className="font-semibold">{post.parent_post.username}</span>
-                  <span className="text-muted-foreground/50">·</span>
-                </>
-              )}
-              <span className="text-xs text-muted-foreground">
-                {timeAgo(post.parent_post.created_at)}
+              <span className="font-medium leading-none">{post.parent_post.username}</span>
+              <span aria-hidden className="size-[2px] shrink-0 bg-muted-foreground/50" />
+              <span className="text-xs leading-none text-muted-foreground">
+                <TimeAgo date={post.parent_post.created_at} />
               </span>
             </div>
-            <div className="font-content text-base leading-relaxed">
+            <div className="font-content text-base leading-relaxed [&_a]:relative [&_a]:z-20">
               <PostContent content={post.parent_post.content} />
             </div>
+            {post.parent_post.images.length > 0 && (
+              <div className="relative z-20">
+                <ImageGallery images={post.parent_post.images} />
+              </div>
+            )}
             {post.parent_post.link_previews.length > 0 && (
               <div className="relative z-20">
                 {post.parent_post.link_previews.map((lp, i) => (
@@ -281,6 +326,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
                   rows={5}
+                  className="font-content leading-relaxed placeholder:font-sans"
                 />
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
