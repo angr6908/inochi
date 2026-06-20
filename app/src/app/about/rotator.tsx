@@ -52,21 +52,19 @@ const ROTATE_MS = 3500;
 export function AboutRotator() {
   const [active, setActive] = useState(0);
   const [animated, setAnimated] = useState(false);
+  const [ready, setReady] = useState(false);
   const ringRef = useRef<SVGCircleElement | null>(null);
 
   useEffect(() => {
-    let raf2 = 0;
-    const raf1 = requestAnimationFrame(() => {
-      setActive(Math.floor(Math.random() * LINES.length));
-      raf2 = requestAnimationFrame(() => setAnimated(true));
-    });
+    setActive(Math.floor(Math.random() * LINES.length));
+    setAnimated(true);
+    const raf = requestAnimationFrame(() => setReady(true));
     const t = setInterval(
       () => setActive((n) => (n + 1) % LINES.length),
       ROTATE_MS,
     );
     return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
+      cancelAnimationFrame(raf);
       clearInterval(t);
     };
   }, []);
@@ -86,10 +84,10 @@ export function AboutRotator() {
   }, [active]);
 
   return (
-    <div className="flex flex-col gap-5">
+    <div className="flex flex-col items-center gap-5">
       <h1 className="grid grid-cols-1 text-2xl font-semibold leading-snug tracking-tight">
         {LINES.map((line, i) => {
-          const isActive = i === active;
+          const isActive = ready && i === active;
           return (
             <span
               key={i}

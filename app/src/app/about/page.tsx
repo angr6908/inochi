@@ -27,7 +27,7 @@ export default function AboutPage() {
         </span>
       </header>
 
-      <div className="flex max-w-md flex-col">
+      <div className="flex max-w-md flex-col items-center">
         <AboutRotator />
       </div>
 

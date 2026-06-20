@@ -391,6 +391,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
               alt={preview.title ?? ""}
               loading={priority ? "eager" : "lazy"}
               fetchPriority={priority ? "high" : undefined}
+              decoding="async"
               ref={measureThumb}
               onLoad={(e) => measureThumb(e.currentTarget)}
               className={cn(
@@ -429,6 +430,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
           alt={preview.title ?? ""}
           loading={priority ? "eager" : "lazy"}
           fetchPriority={priority ? "high" : undefined}
+          decoding="async"
           className="aspect-video w-full object-contain"
         />
       </a>

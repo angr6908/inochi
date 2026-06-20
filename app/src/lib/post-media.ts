@@ -30,13 +30,8 @@ export function firstPostMediaUrls(posts: Post[]): string[] {
 }
 
 export function pageImageUrls(posts: Post[]): string[] {
+  const emojiUrl = new Map((cachedEmojis() ?? []).map((e) => [e.shortcode, e.url]));
   const urls: string[] = [];
-  for (const post of posts) {
-    for (const img of post.images) urls.push(img.url);
-    for (const lp of post.link_previews) {
-      const thumb = lp.thumbnail ?? lp.image_url;
-      if (thumb) urls.push(thumb);
-    }
-  }
+  for (const post of posts) urls.push(...postMediaUrls(post, emojiUrl));
   return urls;
 }

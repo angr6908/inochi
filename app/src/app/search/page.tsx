@@ -2,14 +2,16 @@
 
 import { useEffect, useRef, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { searchPosts, Post } from "@/lib/api";
+import { searchPosts, loadEmojis, Post } from "@/lib/api";
 import { PostFeed } from "@/components/post-feed";
 import { Skeleton } from "@/components/ui/skeleton";
 import { PostListSkeleton } from "@/components/post-list-skeleton";
 import { PostPagination } from "@/components/post-pagination";
 import { preloadHigh, preloadImages } from "@/lib/image-loader";
 import { firstPostMediaUrls, pageImageUrls } from "@/lib/post-media";
+import { preloadPostFonts } from "@/lib/font-preload";
 import { useTitle } from "@/lib/use-title";
+import { scrollToTop } from "@/lib/scroll";
 
 const pageCache = new Map<string, { posts: Post[]; pages: number; matches: number }>();
 const cacheKey = (q: string, page: number) => `${q}:${page}`;
@@ -24,6 +26,7 @@ function prefetchNeighbors(q: string, page: number, pages: number) {
     searchPosts(q, p)
       .then((r) => {
         pageCache.set(cacheKey(q, r.page), { posts: r.posts, pages: r.pages, matches: r.matches ?? r.total });
+        preloadPostFonts(r.posts);
       })
       .catch(() => {});
   }
@@ -59,7 +62,9 @@ function SearchContent() {
     }
     setLoading(true);
     try {
-      const res = await searchPosts(query, p);
+      // Load emojis alongside results so their shortcode→url map is ready at
+      // first paint, rather than popping in after a later re-render.
+      const [res] = await Promise.all([searchPosts(query, p), loadEmojis()]);
       if (myReq !== reqRef.current) return;
       pageCache.set(cacheKey(query, res.page), { posts: res.posts, pages: res.pages, matches: res.matches ?? res.total });
       preloadHigh(...firstPostMediaUrls(res.posts));
@@ -84,13 +89,18 @@ function SearchContent() {
 
   useEffect(() => {
     if (posts.length === 0) return;
-    const run = () =>
+    const run = () => {
+      preloadPostFonts(posts);
       preloadImages(pageImageUrls(posts), () => {
         for (const p of [page + 1, page - 1]) {
           const neighbor = pageCache.get(cacheKey(q.trim(), p));
-          if (neighbor) preloadImages(pageImageUrls(neighbor.posts));
+          if (neighbor) {
+            preloadPostFonts(neighbor.posts);
+            preloadImages(pageImageUrls(neighbor.posts));
+          }
         }
       });
+    };
     const w = window as typeof window & {
       requestIdleCallback?: (cb: () => void) => number;
       cancelIdleCallback?: (id: number) => void;
@@ -115,7 +125,7 @@ function SearchContent() {
             <p className="text-sm text-muted-foreground">{matches} result{matches !== 1 ? "s" : ""}</p>
           )}
           <PostFeed posts={posts} dedupeReferences onUpdate={() => { clearPageCache(); search(q, page); }} />
-          <PostPagination page={page} pages={pages} onChange={(p) => search(q, p)} />
+          <PostPagination page={page} pages={pages} onChange={(p) => { search(q, p); scrollToTop(); }} />
         </>
       )}
     </div>

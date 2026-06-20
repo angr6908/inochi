@@ -5,6 +5,7 @@ import { useRouter, usePathname } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { requestHomeLogoReset } from "@/lib/home-reset";
+import { scrollToTop } from "@/lib/scroll";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,7 +36,7 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
     if (pathname === "/") {
       e.preventDefault();
       window.dispatchEvent(new Event("home:reset"));
-      window.scrollTo({ top: 0 });
+      scrollToTop();
     } else if (HOME_LOGO_RESET_PATHS.has(pathname)) {
       if (pathname === "/search") {
         setQuery("");

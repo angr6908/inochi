@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AuthProvider } from "@/lib/auth-context";
 import { NavBar } from "@/components/nav-bar";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { scrollToTop } from "@/lib/scroll";
 
 // Height of the sticky nav's inner row (h-14). The scroll sentinel offsets the
 // viewport by this so it trips exactly at the nav's bottom edge.
@@ -30,6 +31,17 @@ export function Providers({ children, initialAuthed }: { children: React.ReactNo
     setPrevPath(pathname);
     setStuck(false);
   }
+
+  // Open static content pages at the very top. The global `scroll-behavior:
+  // smooth` lets the router's own scroll reset animate and get interrupted by
+  // the incoming page's reflow, leaving it partway down the previous page — so
+  // pin the top explicitly (instantly) on entry. The home timeline (restores or
+  // resets its own scroll) and post pages (scroll to the hashed reply) manage
+  // their own position and are excluded.
+  useLayoutEffect(() => {
+    if (pathname === "/" || pathname.startsWith("/post/")) return;
+    scrollToTop();
+  }, [pathname]);
 
   useEffect(() => {
     const el = sentinelRef.current;

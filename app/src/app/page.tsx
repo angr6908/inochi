@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { getPosts, Post } from "@/lib/api";
+import { getPosts, loadEmojis, Post } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { consumeHomeLogoReset } from "@/lib/home-reset";
 import { useTitle } from "@/lib/use-title";
@@ -13,6 +13,8 @@ import { PostListSkeleton } from "@/components/post-list-skeleton";
 import { PostPagination } from "@/components/post-pagination";
 import { preloadHigh, preloadImages } from "@/lib/image-loader";
 import { firstPostMediaUrls, pageImageUrls } from "@/lib/post-media";
+import { preloadPostFonts, postFontsReady } from "@/lib/font-preload";
+import { scrollToTop } from "@/lib/scroll";
 
 interface HomeCache {
   tag: string | undefined;
@@ -23,21 +25,6 @@ interface HomeCache {
 
 let homeCache: HomeCache | null = null;
 let homeScrollY = 0;
-
-// Jump to the top instantly (overriding the global `scroll-behavior: smooth` so
-// the page doesn't visibly scroll up while the new page swaps in), then re-pin
-// on the next frame after layout settles.
-function scrollToTop() {
-  if (typeof window === "undefined") return;
-  const html = document.documentElement;
-  const previous = html.style.scrollBehavior;
-  html.style.scrollBehavior = "auto";
-  window.scrollTo(0, 0);
-  requestAnimationFrame(() => {
-    window.scrollTo(0, 0);
-    html.style.scrollBehavior = previous;
-  });
-}
 
 // Cache each fetched page's data so turning to an already-loaded (or prefetched)
 // page renders instantly from memory — no async fetch, no intermediate old-page
@@ -55,6 +42,7 @@ function prefetchNeighbors(page: number, tag: string | undefined, pages: number)
     getPosts(p, 20, tag)
       .then((r) => {
         pageCache.set(cacheKey(tag, r.page), { posts: r.posts, pages: r.pages });
+        preloadPostFonts(r.posts);
       })
       .catch(() => {});
   }
@@ -86,13 +74,18 @@ function HomeContent() {
 
   useEffect(() => {
     if (posts.length === 0) return;
-    const run = () =>
+    const run = () => {
+      preloadPostFonts(posts);
       preloadImages(pageImageUrls(posts), () => {
         for (const p of [page + 1, page - 1]) {
           const neighbor = pageCache.get(cacheKey(activeTag, p));
-          if (neighbor) preloadImages(pageImageUrls(neighbor.posts));
+          if (neighbor) {
+            preloadPostFonts(neighbor.posts);
+            preloadImages(pageImageUrls(neighbor.posts));
+          }
         }
       });
+    };
     const w = window as typeof window & {
       requestIdleCallback?: (cb: () => void) => number;
       cancelIdleCallback?: (id: number) => void;
@@ -112,6 +105,8 @@ function HomeContent() {
     const cached = pageCache.get(cacheKey(tag, p));
     if (cached) {
       preloadHigh(...firstPostMediaUrls(cached.posts));
+      await postFontsReady(cached.posts);
+      if (myReq !== reqRef.current) return;
       setPosts(cached.posts);
       setPages(cached.pages);
       setPage(p);
@@ -122,7 +117,10 @@ function HomeContent() {
     }
     setLoading(true);
     try {
-      const postsRes = await getPosts(p, 20, tag);
+      // Fetch the emoji list alongside the posts so its shortcode→url map is
+      // ready at first paint — otherwise emojis only appear on a later re-render
+      // (after PostContent mounts and fetches them), well after the images.
+      const [postsRes] = await Promise.all([getPosts(p, 20, tag), loadEmojis()]);
       if (myReq !== reqRef.current) return;
       pageCache.set(cacheKey(tag, postsRes.page), { posts: postsRes.posts, pages: postsRes.pages });
       preloadHigh(...firstPostMediaUrls(postsRes.posts));
@@ -168,9 +166,15 @@ function HomeContent() {
 
   const loadedTag = useRef<{ v: string | undefined } | null>(restore ? { v: tagParam } : null);
   useEffect(() => {
-    if (loadedTag.current && loadedTag.current.v === tagParam) return;
+    const prev = loadedTag.current;
+    if (prev && prev.v === tagParam) return;
     loadedTag.current = { v: tagParam };
     load(1, tagParam);
+    // Clicking a #hashtag swaps the tag in place (same `/` route, no remount),
+    // so the scroll position carries over from the previous feed — pin to the
+    // top of the new one. Skip the initial mount (`prev === null`), where the
+    // route navigation (or cache restore) already settles the scroll.
+    if (prev) scrollToTop();
   }, [tagParam, load]);
 
   // Clicking the logo while already on the timeline resets to page 1 (clearing

@@ -55,7 +55,7 @@ function timeAgo(dateStr: string): string {
     return `${Math.floor(diffMin / 60)}h`;
   }
 
-  // ≥ 12 hours but still today → clock time only.
+  // ≥ 12 hours but still today → just "HH:MM".
   if (sameDay(then, now)) return hhmm;
 
   // Yesterday → "Yesterday HH:MM".

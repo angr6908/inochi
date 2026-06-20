@@ -154,7 +154,11 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
           </div>
 
           {many && (
-            <div className="flex max-w-[95vw] flex-wrap justify-center gap-2">
+            <div
+              onClick={(e) => {
+                if (e.target === e.currentTarget) setOpen(false);
+              }}
+              className="flex w-full max-w-[95vw] flex-wrap justify-center gap-2">
               {images.map((img, i) => (
                 <button
                   key={img.id}
