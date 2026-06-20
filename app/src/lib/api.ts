@@ -106,11 +106,21 @@ export const getPost = (id: string) =>
 export const createPost = (formData: FormData) =>
   request<{ post: Post }>("/api/posts", { method: "POST", body: formData });
 
-export const updatePost = (id: string, content: string) =>
-  request<{ post: Post }>(`/api/posts/${id}`, {
+// `parentPostId` controls the echo link: omit (undefined) to leave it as is,
+// pass `null` to unlink into an independent post, or a post id to make this an
+// echo of that post.
+export const updatePost = (
+  id: string,
+  content: string,
+  parentPostId?: string | null,
+) => {
+  const body: { content: string; parent_post_id?: string | null } = { content };
+  if (parentPostId !== undefined) body.parent_post_id = parentPostId;
+  return request<{ post: Post }>(`/api/posts/${id}`, {
     method: "PUT",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify(body),
   });
+};
 
 export const deletePost = (id: string) =>
   request<{ message: string }>(`/api/posts/${id}`, { method: "DELETE" });

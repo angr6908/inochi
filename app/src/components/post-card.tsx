@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { Post, updatePost, deletePost } from "@/lib/api";
+import { Post, updatePost, deletePost, getPost } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
+import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
@@ -21,7 +22,26 @@ import { ImageGallery } from "./image-gallery";
 import { LinkPreviewCard } from "./link-preview-card";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Reply, Pencil, Trash2, MoreHorizontal } from "lucide-react";
+import { Reply, Pencil, Trash2, MoreHorizontal, Link2, Link2Off } from "lucide-react";
+
+/** The fields shown for the parent post in the edit dialog's echo-link control. */
+type ParentSummary = Pick<NonNullable<Post["parent_post"]>, "username" | "content">;
+
+/** Pull a post id out of a pasted post link, echo link, or raw id. */
+function parsePostId(input: string): string | null {
+  const s = input.trim();
+  if (!s) return null;
+  // An echo link points at the echo itself via ?echo=<id> / #<id>, not the
+  // /post/<root> path, so those take precedence.
+  const echoMatch = s.match(/[?&]echo=([\w-]+)/);
+  if (echoMatch) return echoMatch[1];
+  const hashMatch = s.match(/#([\w-]+)$/);
+  if (hashMatch) return hashMatch[1];
+  const pathMatch = s.match(/\/post\/([\w-]+)/);
+  if (pathMatch) return pathMatch[1];
+  if (/^[\w-]+$/.test(s)) return s;
+  return null;
+}
 
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -107,14 +127,22 @@ interface PostCardProps {
   className?: string;
   /** Above-the-fold hint — eager-load this card's media (the first post in the feed). */
   priority?: boolean;
-  /** Move the echo action into the actions menu instead of a standalone button (feed views). */
+  /** Whether to show the standalone echo button (outside the menu). Defaults to
+   *  true (thread page); feed views pass false unless the post has echoes worth
+   *  surfacing. */
+  echoVisible?: boolean;
+  /** Also offer the echo action inside the actions menu (feed views). Only takes
+   *  effect for logged-in viewers, who always get it there. */
   echoInMenu?: boolean;
 }
 
-export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onDelete, className, priority, echoInMenu }: PostCardProps) {
+export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onDelete, className, priority, echoVisible = true, echoInMenu }: PostCardProps) {
   const { user } = useAuth();
   const router = useRouter();
   const isOwner = user?.id === post.user_id;
+  // Logged-in viewers always get the echo action in the actions menu (feeds);
+  // logged-out viewers never do.
+  const echoMenuItem = !!echoInMenu && !!user;
   const hasFollowups = post.followup_count > 0;
   const sameAuthor = post.parent_post?.username === post.username;
   const showReference = !hideParent && !!post.parent_post;
@@ -123,11 +151,59 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
   const [saving, setSaving] = useState(false);
+  // Echo link being edited: the parent post id, plus a summary for display.
+  // Both are populated by openEdit when the dialog opens.
+  const [editParentId, setEditParentId] = useState<string | null>(null);
+  const [parentSummary, setParentSummary] = useState<ParentSummary | null>(null);
+  const [parentInput, setParentInput] = useState("");
+  const [linking, setLinking] = useState(false);
+
+  const openEdit = () => {
+    setEditContent(post.content);
+    setEditParentId(post.parent_post_id);
+    setParentSummary(
+      post.parent_post
+        ? { username: post.parent_post.username, content: post.parent_post.content }
+        : null,
+    );
+    setParentInput("");
+    setEditOpen(true);
+  };
+
+  const handleLinkParent = async () => {
+    const pid = parsePostId(parentInput);
+    if (!pid) {
+      toast.error("Enter a post link or ID");
+      return;
+    }
+    if (pid === post.id) {
+      toast.error("A post can't echo itself");
+      return;
+    }
+    setLinking(true);
+    try {
+      const { post: target } = await getPost(pid);
+      setEditParentId(target.id);
+      setParentSummary({ username: target.username, content: target.content });
+      setParentInput("");
+    } catch {
+      toast.error("Post not found");
+    } finally {
+      setLinking(false);
+    }
+  };
+
+  const handleUnlinkParent = () => {
+    setEditParentId(null);
+    setParentSummary(null);
+  };
 
   const handleEdit = async () => {
     setSaving(true);
     try {
-      await updatePost(post.id, editContent);
+      // Only send the echo link when it actually changed; `null` unlinks.
+      const parentChange = editParentId !== post.parent_post_id ? editParentId : undefined;
+      await updatePost(post.id, editContent, parentChange);
       toast.success("Post updated");
       setEditOpen(false);
       onUpdate?.();
@@ -199,7 +275,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
                 thread page, or navigates to its root thread (and opens the
                 composer there) from anywhere else. In feed views it lives in
                 the actions menu instead. */}
-            {!echoInMenu && (
+            {echoVisible && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -216,7 +292,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
               </Button>
             )}
 
-            {(isOwner || echoInMenu) && (
+            {(isOwner || echoMenuItem) && (
               <DropdownMenu>
                 <DropdownMenuTrigger
                   render={
@@ -231,7 +307,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
                   <MoreHorizontal className="size-4" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="min-w-32">
-                  {echoInMenu && (
+                  {echoMenuItem && (
                     <DropdownMenuItem onClick={handleEcho}>
                       <Reply className="size-4" />
                       Echo
@@ -244,12 +320,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
                   )}
                   {isOwner && (
                     <>
-                      <DropdownMenuItem
-                        onClick={() => {
-                          setEditContent(post.content);
-                          setEditOpen(true);
-                        }}
-                      >
+                      <DropdownMenuItem onClick={openEdit}>
                         <Pencil className="size-4" />
                         Edit
                       </DropdownMenuItem>
@@ -328,6 +399,60 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
                   rows={5}
                   className="font-content leading-relaxed placeholder:font-sans"
                 />
+
+                {/* Echo link controls: make this post an echo of another, or
+                    unlink it into an independent post. */}
+                <div className="flex flex-col gap-2">
+                  {parentSummary ? (
+                    <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/40 p-2.5">
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs text-muted-foreground">
+                          Echo of <span className="font-medium text-foreground">{parentSummary.username}</span>
+                        </div>
+                        <div className="mt-0.5 line-clamp-2 font-content text-sm leading-snug">
+                          {parentSummary.content || "(no text)"}
+                        </div>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        type="button"
+                        onClick={handleUnlinkParent}
+                        className="h-7 shrink-0 gap-1 px-2 text-muted-foreground hover:text-foreground"
+                      >
+                        <Link2Off className="size-4" />
+                        Make independent
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={parentInput}
+                        onChange={(e) => setParentInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleLinkParent();
+                          }
+                        }}
+                        placeholder="Echo of… paste a post link or ID"
+                        className="h-9 flex-1"
+                      />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        type="button"
+                        onClick={handleLinkParent}
+                        disabled={linking || !parentInput.trim()}
+                        className="h-9 shrink-0 gap-1"
+                      >
+                        <Link2 className="size-4" />
+                        {linking ? "Linking..." : "Link"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
                   <Button onClick={handleEdit} disabled={saving}>

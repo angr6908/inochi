@@ -235,22 +235,40 @@ fn fetch_link_previews(db: &rusqlite::Connection, post_id: &str) -> Vec<LinkPrev
         .collect()
 }
 
-fn find_root(db: &rusqlite::Connection, start: &str) -> String {
-    let mut current = start.to_string();
+/// The post a post echoes (its parent), or `None` for a root post or a missing id.
+fn parent_of(db: &rusqlite::Connection, id: &str) -> Option<String> {
+    db.query_row(
+        "SELECT parent_post_id FROM posts WHERE id = ?1",
+        [id],
+        |r| r.get(0),
+    )
+    .ok()
+    .flatten()
+}
+
+/// Whether `target` is `candidate` itself or one of its ancestors. Re-parenting
+/// post X under parent P is a cycle when X equals P or X is an ancestor of P
+/// (P lives in X's own thread), which would make the parent chain loop and hang
+/// [`find_root`]. Walks up from `candidate` looking for `target`.
+fn is_self_or_ancestor(db: &rusqlite::Connection, target: &str, candidate: &str) -> bool {
+    let mut current = candidate.to_string();
     loop {
-        let parent: Option<String> = db
-            .query_row(
-                "SELECT parent_post_id FROM posts WHERE id = ?1",
-                [&current],
-                |r| r.get(0),
-            )
-            .ok()
-            .flatten();
-        match parent {
+        if current == target {
+            return true;
+        }
+        match parent_of(db, &current) {
             Some(p) => current = p,
-            None => return current,
+            None => return false,
         }
     }
+}
+
+fn find_root(db: &rusqlite::Connection, start: &str) -> String {
+    let mut current = start.to_string();
+    while let Some(parent) = parent_of(db, &current) {
+        current = parent;
+    }
+    current
 }
 
 pub fn build_post(db: &rusqlite::Connection, post_id: &str) -> Option<PostResponse> {
@@ -570,11 +588,44 @@ pub async fn update_post(
         // Ownership check also yields the pre-edit content for the link diff.
         let old_content = check_post_owner(&conn, &id, &user_id)?;
 
+        // Validate any echo (parent) link change before touching the row, so a
+        // rejected re-parent leaves the post completely unmodified.
+        if let Some(Some(new_parent)) = body.parent_post_id.as_ref() {
+            if new_parent == &id {
+                return Err(err(StatusCode::BAD_REQUEST, "A post can't echo itself"));
+            }
+            let parent_exists: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM posts WHERE id = ?1",
+                    [new_parent],
+                    |r| r.get(0),
+                )
+                .unwrap_or(0);
+            if parent_exists == 0 {
+                return Err(err(StatusCode::NOT_FOUND, "Post to echo not found"));
+            }
+            if is_self_or_ancestor(&conn, &id, new_parent) {
+                return Err(err(
+                    StatusCode::BAD_REQUEST,
+                    "Can't echo a post from this post's own thread",
+                ));
+            }
+        }
+
         let now = now_ts();
-        conn.execute(
-            "UPDATE posts SET content = ?1, updated_at = ?2 WHERE id = ?3",
-            rusqlite::params![body.content.trim(), now, id],
-        )
+        // Fold any echo (parent) link change into the same row write: `Some`
+        // carries the new value (a string to link, NULL to unlink), `None`
+        // leaves parent_post_id untouched.
+        match &body.parent_post_id {
+            Some(new_parent) => conn.execute(
+                "UPDATE posts SET content = ?1, updated_at = ?2, parent_post_id = ?3 WHERE id = ?4",
+                rusqlite::params![body.content.trim(), now, new_parent, id],
+            ),
+            None => conn.execute(
+                "UPDATE posts SET content = ?1, updated_at = ?2 WHERE id = ?3",
+                rusqlite::params![body.content.trim(), now, id],
+            ),
+        }
         .unwrap();
 
         // Re-extract tags

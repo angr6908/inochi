@@ -209,7 +209,6 @@ function HomeContent() {
         <>
           <PostFeed
             posts={posts}
-            surfaceEchoes
             dedupeReferences={!!activeTag}
             onUpdate={() => { clearPageCache(); load(page, activeTag); }}
           />

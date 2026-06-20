@@ -8,7 +8,6 @@ interface PostFeedProps {
   posts: Post[];
   onUpdate: () => void;
   dedupeReferences?: boolean;
-  surfaceEchoes?: boolean;
 }
 
 const CUSTOM_EMOJI = /:[a-z0-9_]*[a-z_][a-z0-9_]*:/i;
@@ -21,7 +20,7 @@ function hasMedia(p: Post): boolean {
   );
 }
 
-export function PostFeed({ posts, onUpdate, dedupeReferences, surfaceEchoes }: PostFeedProps) {
+export function PostFeed({ posts, onUpdate, dedupeReferences }: PostFeedProps) {
   const idsOnPage = new Set(posts.map((p) => p.id));
   const priorityIndex = posts.findIndex(hasMedia);
 
@@ -41,13 +40,17 @@ export function PostFeed({ posts, onUpdate, dedupeReferences, surfaceEchoes }: P
         const sameAuthorAsNext = sameThreadAsNext && next?.username === post.username;
         const parentOnPage = !!(post.parent_post && idsOnPage.has(post.parent_post.id));
         const echoIsNeighbor = continuesPrev;
-        const echoInMenu = !(surfaceEchoes && post.followup_count > 0 && !echoIsNeighbor);
+        // In feeds the echo button is only a way into a post's existing thread,
+        // so show it solely when the post has echoes that aren't already shown
+        // as an adjacent card.
+        const echoVisible = post.followup_count > 0 && !echoIsNeighbor;
         return (
           <PostCard
             key={post.id}
             post={post}
             priority={i === priorityIndex}
-            echoInMenu={echoInMenu}
+            echoVisible={echoVisible}
+            echoInMenu
             hideParent={repliesToNext || (!!dedupeReferences && parentOnPage)}
             hideUsername={sameAuthorAsNext}
             onUpdate={onUpdate}
