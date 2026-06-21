@@ -189,6 +189,10 @@ export const cachedEmojis = (): Emoji[] | null => {
   return storedEmojis;
 };
 
+export function seedEmojis(emojis: Emoji[]): void {
+  if (!emojiCache) emojiCache = emojis;
+}
+
 export const uploadEmoji = (formData: FormData) =>
   request<{ emoji: Emoji }>("/api/emojis", { method: "POST", body: formData });
 

@@ -8,6 +8,8 @@ import { Roboto, Noto_Sans_JP } from "next/font/google";
 import { cookies } from "next/headers";
 import "./globals.css";
 import { Providers } from "./providers";
+import { SeedEmojis } from "@/components/seed-emojis";
+import { fetchEmojis } from "@/lib/ssr";
 import { SITE_NAME, SITE_DESCRIPTION, resolveOrigin } from "@/lib/site";
 
 const roboto = Roboto({
@@ -57,13 +59,15 @@ export function generateMetadata(): Metadata {
 }
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const authed = (await cookies()).get("auth")?.value === "1";
+  const [cookieStore, emojis] = await Promise.all([cookies(), fetchEmojis()]);
+  const authed = cookieStore.get("auth")?.value === "1";
   return (
     <html
       lang="en"
       className={`${GeistSans.variable} ${roboto.variable} ${notoSansJP.variable}`}
     >
       <body className="antialiased">
+        <SeedEmojis emojis={emojis} />
         <Providers initialAuthed={authed}>{children}</Providers>
       </body>
     </html>

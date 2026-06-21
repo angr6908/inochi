@@ -68,7 +68,7 @@ export const PostContent = memo(function PostContent({ content, priority }: { co
           const url = emojiUrl.get(m[3]);
           if (url) {
             // eslint-disable-next-line @next/next/no-img-element
-            out.push(<img key={key++} src={url} alt={m[3]} loading={priority ? "eager" : undefined} fetchPriority={priority ? "high" : undefined} decoding="async" className="inline-block h-5 w-5 align-text-bottom" />);
+            out.push(<img key={key++} src={url} alt={m[3]} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : undefined} decoding="async" className="inline-block h-5 w-5 align-text-bottom" />);
           } else if (!loaded) {
             out.push(<span key={key++} aria-hidden className="inline-block h-5 w-5 align-text-bottom" />);
           } else {

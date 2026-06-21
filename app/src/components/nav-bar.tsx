@@ -34,7 +34,17 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   useEffect(() => {
-    if (pathname !== "/about") preloadAboutFonts();
+    if (pathname === "/about") return;
+    const w = window as typeof window & {
+      requestIdleCallback?: (cb: () => void) => number;
+      cancelIdleCallback?: (id: number) => void;
+    };
+    if (w.requestIdleCallback) {
+      const id = w.requestIdleCallback(() => preloadAboutFonts());
+      return () => w.cancelIdleCallback?.(id);
+    }
+    const t = setTimeout(preloadAboutFonts, 300);
+    return () => clearTimeout(t);
   }, [pathname]);
 
   const handleLogo = (e: React.MouseEvent) => {
