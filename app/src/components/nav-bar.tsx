@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import { preloadAboutFonts } from "@/lib/font-preload";
 import { requestHomeLogoReset } from "@/lib/home-reset";
 import { scrollToTop } from "@/lib/scroll";
 import { Button } from "@/components/ui/button";
@@ -31,6 +32,10 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
   const pathname = usePathname();
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    if (pathname !== "/about") preloadAboutFonts();
+  }, [pathname]);
 
   const handleLogo = (e: React.MouseEvent) => {
     if (pathname === "/") {
@@ -72,7 +77,7 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
           </form>
         ) : (
           <>
-            <Link href="/" onClick={handleLogo} className="shrink-0 text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
+            <Link href="/" prefetch onClick={handleLogo} className="shrink-0 text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
               inochi
             </Link>
 
@@ -96,7 +101,7 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
               >
                 <Search className="size-4" />
               </Button>
-              <Link href="/about">
+              <Link href="/about" prefetch>
                 <Button variant="ghost" size="sm">About</Button>
               </Link>
               {user ? (
@@ -122,10 +127,10 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
                 <Skeleton className="h-8 w-20 rounded-md" />
               ) : (
                 <>
-                  <Link href="/auth/signin">
+                  <Link href="/auth/signin" prefetch>
                     <Button variant="ghost" size="sm">Sign in</Button>
                   </Link>
-                  <Link href="/auth/signup">
+                  <Link href="/auth/signup" prefetch>
                     <Button size="sm">Sign up</Button>
                   </Link>
                 </>

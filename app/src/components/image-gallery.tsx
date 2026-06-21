@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { useImageReveal } from "@/lib/use-image-reveal";
+import { cn } from "@/lib/utils";
 
 const viewerButton =
   "flex items-center justify-center rounded-lg bg-black/40 text-white ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-black/60 hover:ring-white/30 focus:outline-none focus-visible:outline-none cursor-pointer";
@@ -24,6 +26,7 @@ function GalleryImage({
 }) {
   const [src, setSrc] = useState(image.url);
   const retried = useRef(false);
+  const { onMount, onReveal, revealClass } = useImageReveal();
 
   // Reserve the image's box so it never shifts layout while loading.
   // A grid cell fills its column and derives height from the ratio; a single
@@ -47,6 +50,8 @@ function GalleryImage({
       loading={priority ? "eager" : "lazy"}
       fetchPriority={priority ? "high" : undefined}
       decoding="async"
+      ref={onMount}
+      onLoad={onReveal}
       style={style}
       onClick={onClick}
       onError={() => {
@@ -55,11 +60,13 @@ function GalleryImage({
           setSrc(`${image.url}${image.url.includes("?") ? "&" : "?"}retry=1`);
         }
       }}
-      className={`block cursor-pointer rounded-md border bg-muted ${
+      className={cn(
+        "block cursor-pointer rounded-md border bg-muted",
+        revealClass,
         single
           ? sized ? "mx-auto" : "mx-auto max-h-[400px] max-w-full"
-          : "h-auto w-full"
-      }`}
+          : "h-auto w-full",
+      )}
     />
   );
 }

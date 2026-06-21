@@ -8,6 +8,10 @@ import { Post } from "@/lib/api";
 const FONT_VARS = ["--font-roboto", "--font-noto-sans-jp"];
 const WEIGHTS = ["400", "700"];
 
+function cleanFamily(token: string): string {
+  return token.trim().replace(/^["']|["']$/g, "");
+}
+
 export function preloadPostFonts(posts: Post[]) {
   if (typeof document === "undefined" || !document.fonts?.load) return;
 
@@ -20,11 +24,36 @@ export function preloadPostFonts(posts: Post[]) {
 
   const cs = getComputedStyle(document.documentElement);
   for (const v of FONT_VARS) {
-    const stack = cs.getPropertyValue(v).trim();
-    const family = stack.split(",")[0].trim().replace(/^["']|["']$/g, "");
+    const family = cleanFamily(cs.getPropertyValue(v).split(",")[0]);
     if (!family) continue;
     for (const w of WEIGHTS) {
       document.fonts.load(`${w} 1em "${family}"`, text).catch(() => {});
+    }
+  }
+}
+
+const ABOUT_FONT_VARS = ["--font-heading", "--font-noto-sans-jp"];
+const ABOUT_TEXT =
+  "命inochi" +
+  "いかにして「命」という檻を越えるのか。" +
+  "How to escape from the prison of existence?" +
+  "作爲「存在」之産物的生命體，如何從時間的牢籠中逃離？" +
+  "It may be the last and greatest jailbreak for all humankind.";
+
+export function preloadAboutFonts() {
+  if (typeof document === "undefined" || !document.fonts?.load) return;
+
+  const cs = getComputedStyle(document.documentElement);
+  const families = new Set<string>();
+  for (const v of ABOUT_FONT_VARS) {
+    for (const part of cs.getPropertyValue(v).split(",")) {
+      const family = cleanFamily(part);
+      if (family && family !== "sans-serif") families.add(family);
+    }
+  }
+  for (const family of families) {
+    for (const w of WEIGHTS) {
+      document.fonts.load(`${w} 1em "${family}"`, ABOUT_TEXT).catch(() => {});
     }
   }
 }
@@ -42,8 +71,7 @@ export function postFontsReady(posts: Post[], timeoutMs = 200): Promise<void> {
   const cs = getComputedStyle(document.documentElement);
   const loads: Promise<unknown>[] = [];
   for (const v of FONT_VARS) {
-    const stack = cs.getPropertyValue(v).trim();
-    const family = stack.split(",")[0].trim().replace(/^["']|["']$/g, "");
+    const family = cleanFamily(cs.getPropertyValue(v).split(",")[0]);
     if (!family) continue;
     for (const w of WEIGHTS) {
       loads.push(document.fonts.load(`${w} 1em "${family}"`, text).catch(() => {}));

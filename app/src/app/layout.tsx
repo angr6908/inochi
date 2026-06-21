@@ -8,8 +8,7 @@ import { Roboto, Noto_Sans_JP } from "next/font/google";
 import { cookies } from "next/headers";
 import "./globals.css";
 import { Providers } from "./providers";
-import { SITE_NAME, SITE_DESCRIPTION } from "@/lib/site";
-import { currentOrigin } from "@/lib/origin";
+import { SITE_NAME, SITE_DESCRIPTION, resolveOrigin } from "@/lib/site";
 
 const roboto = Roboto({
   subsets: ["latin"],
@@ -25,8 +24,8 @@ const notoSansJP = Noto_Sans_JP({
   display: "swap",
 });
 
-export async function generateMetadata(): Promise<Metadata> {
-  const origin = await currentOrigin();
+export function generateMetadata(): Metadata {
+  const origin = resolveOrigin({});
   return {
     metadataBase: new URL(origin),
     title: SITE_NAME,

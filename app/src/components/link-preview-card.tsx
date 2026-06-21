@@ -14,6 +14,34 @@ import {
 } from "simple-icons";
 import { LinkPreview } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useImageReveal } from "@/lib/use-image-reveal";
+
+function PreviewThumb({
+  src,
+  alt,
+  priority,
+  className,
+}: {
+  src?: string;
+  alt: string;
+  priority?: boolean;
+  className?: string;
+}) {
+  const { onMount, onReveal, revealClass } = useImageReveal();
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt={alt}
+      loading={priority ? "eager" : "lazy"}
+      fetchPriority={priority ? "high" : undefined}
+      decoding="async"
+      ref={onMount}
+      onLoad={onReveal}
+      className={cn(className, revealClass)}
+    />
+  );
+}
 
 function hostOf(url: string): string {
   try {
@@ -398,14 +426,11 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
           )}
         >
           {gridImages.map((src, idx) => (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
+            <PreviewThumb
               key={idx}
               src={src}
               alt={preview.title ?? ""}
-              loading={priority ? "eager" : "lazy"}
-              fetchPriority={priority ? "high" : undefined}
-              decoding="async"
+              priority={priority}
               className={cn(
                 "h-full w-full object-cover",
                 // 3-up: the first photo fills the full-height left column.
@@ -465,13 +490,10 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
             the resource loads) so the card doesn't grow and shove the content
             below it down once the image arrives. object-contain keeps off-ratio
             images uncropped, letterboxed against the muted card. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
+        <PreviewThumb
           src={image ?? undefined}
           alt={preview.title ?? ""}
-          loading={priority ? "eager" : "lazy"}
-          fetchPriority={priority ? "high" : undefined}
-          decoding="async"
+          priority={priority}
           className="aspect-video w-full object-contain"
         />
       </a>

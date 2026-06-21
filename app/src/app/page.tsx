@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState, useCallback, Suspense } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { getPosts, loadEmojis, Post } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -36,6 +36,20 @@ function clearPageCache() {
   pageCache.clear();
 }
 
+const MAX_MOUNTED_PAGES = 8;
+
+function withPage(prev: Map<number, Post[]>, p: number, posts: Post[]): Map<number, Post[]> {
+  const m = new Map(prev);
+  m.delete(p);
+  m.set(p, posts);
+  while (m.size > MAX_MOUNTED_PAGES) {
+    const oldest = m.keys().next().value;
+    if (oldest === undefined || oldest === p) break;
+    m.delete(oldest);
+  }
+  return m;
+}
+
 function prefetchNeighbors(page: number, tag: string | undefined, pages: number) {
   for (const p of [page + 1, page - 1]) {
     if (p < 1 || p > pages || pageCache.has(cacheKey(tag, p))) continue;
@@ -57,10 +71,13 @@ function HomeContent() {
   const [restore] = useState(() => !resetFromLogo && homeCache !== null && homeCache.tag === tagParam);
   const snap = restore ? homeCache! : null;
 
-  const [posts, setPosts] = useState<Post[]>(() => snap?.posts ?? []);
+  const [loadedPages, setLoadedPages] = useState<Map<number, Post[]>>(
+    () => new Map(snap ? [[snap.page, snap.posts]] : []),
+  );
   const [page, setPage] = useState(snap?.page ?? 1);
   const [pages, setPages] = useState(snap?.pages ?? 0);
   const [loading, setLoading] = useState(!restore);
+  const posts = useMemo(() => loadedPages.get(page) ?? [], [loadedPages, page]);
   const [activeTag, setActiveTag] = useState<string | undefined>(tagParam);
   useTitle(activeTag ? `#${activeTag}` : undefined);
 
@@ -107,7 +124,7 @@ function HomeContent() {
       preloadHigh(...firstPostMediaUrls(cached.posts));
       await postFontsReady(cached.posts);
       if (myReq !== reqRef.current) return;
-      setPosts(cached.posts);
+      setLoadedPages((prev) => withPage(prev, p, cached.posts));
       setPages(cached.pages);
       setPage(p);
       setLoading(false);
@@ -124,7 +141,7 @@ function HomeContent() {
       if (myReq !== reqRef.current) return;
       pageCache.set(cacheKey(tag, postsRes.page), { posts: postsRes.posts, pages: postsRes.pages });
       preloadHigh(...firstPostMediaUrls(postsRes.posts));
-      setPosts(postsRes.posts);
+      setLoadedPages((prev) => withPage(prev, postsRes.page, postsRes.posts));
       setPages(postsRes.pages);
       setPage(postsRes.page);
       homeCache = {
@@ -139,6 +156,11 @@ function HomeContent() {
     } finally {
       if (myReq === reqRef.current) setLoading(false);
     }
+  }, []);
+
+  const resetPages = useCallback(() => {
+    clearPageCache();
+    setLoadedPages(new Map());
   }, []);
 
   useLayoutEffect(() => {
@@ -169,6 +191,7 @@ function HomeContent() {
     const prev = loadedTag.current;
     if (prev && prev.v === tagParam) return;
     loadedTag.current = { v: tagParam };
+    if (prev) setLoadedPages(new Map());
     load(1, tagParam);
     // Clicking a #hashtag swaps the tag in place (same `/` route, no remount),
     // so the scroll position carries over from the previous feed — pin to the
@@ -183,21 +206,30 @@ function HomeContent() {
     const reset = () => {
       setActiveTag(undefined);
       window.history.replaceState(null, "", "/");
-      clearPageCache();
+      resetPages();
       load(1, undefined);
     };
     window.addEventListener("home:reset", reset);
     return () => window.removeEventListener("home:reset", reset);
-  }, [load]);
+  }, [load, resetPages]);
 
   const changePage = (n: number) => {
-    load(n, activeTag);
+    if (loadedPages.has(n)) {
+      setLoadedPages((prev) => withPage(prev, n, prev.get(n)!));
+      setPage(n);
+      homeCache = { tag: activeTag, posts: loadedPages.get(n)!, page: n, pages };
+      prefetchNeighbors(n, activeTag, pages);
+    } else {
+      load(n, activeTag);
+    }
     scrollToTop();
   };
 
+  const reloadCurrent = () => { resetPages(); load(page, activeTag); };
+
   return (
     <div className="space-y-4">
-      {user && <PostEditor onPostCreated={() => { clearPageCache(); load(1, activeTag); }} />}
+      {user && <PostEditor onPostCreated={() => { resetPages(); load(1, activeTag); }} />}
 
       {posts.length === 0 ? (
         loading ? (
@@ -207,11 +239,15 @@ function HomeContent() {
         )
       ) : (
         <>
-          <PostFeed
-            posts={posts}
-            dedupeReferences={!!activeTag}
-            onUpdate={() => { clearPageCache(); load(page, activeTag); }}
-          />
+          {[...loadedPages].map(([pn, pp]) => (
+            <div key={pn} hidden={pn !== page}>
+              <PostFeed
+                posts={pp}
+                dedupeReferences={!!activeTag}
+                onUpdate={reloadCurrent}
+              />
+            </div>
+          ))}
           <PostPagination page={page} pages={pages} onChange={changePage} />
         </>
       )}
