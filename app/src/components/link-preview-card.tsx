@@ -369,12 +369,53 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
     setThumbFit(isYoutube && ratio > 1.25 && ratio < 1.45 ? "cover" : "contain");
   };
 
+  // Served URLs for a multi-photo preview (e.g. a tweet with several photos),
+  // in order. Empty for the common single-image preview.
+  const gridImages = (preview.images ?? [])
+    .map((i) => i.thumbnail ?? i.image_url)
+    .filter((src): src is string => !!src)
+    .slice(0, 4);
+
   const media = (() => {
     if (playing && embed) {
       return <EmbedPlayer embed={embed} />;
     }
 
     if (!image && !embed) return null;
+
+    // Two or more photos (X never embeds) — lay them out in a grid like the
+    // source does, instead of showing only the first.
+    if (gridImages.length >= 2 && !embed) {
+      const n = gridImages.length;
+      return (
+        <a
+          href={preview.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className={cn(
+            "grid aspect-video w-full grid-cols-2 gap-px overflow-hidden bg-border",
+            n > 2 && "grid-rows-2",
+          )}
+        >
+          {gridImages.map((src, idx) => (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              key={idx}
+              src={src}
+              alt={preview.title ?? ""}
+              loading={priority ? "eager" : "lazy"}
+              fetchPriority={priority ? "high" : undefined}
+              decoding="async"
+              className={cn(
+                "h-full w-full object-cover",
+                // 3-up: the first photo fills the full-height left column.
+                n === 3 && idx === 0 && "row-span-2",
+              )}
+            />
+          ))}
+        </a>
+      );
+    }
 
     if (embed) {
       return (

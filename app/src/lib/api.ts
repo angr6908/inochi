@@ -29,6 +29,14 @@ export interface LinkPreview {
   thumbnail: string | null;
   site_name: string | null;
   author: string | null;
+  /** Every image in order when the preview has more than one (e.g. a tweet
+   *  with several photos). Empty/absent for single-image previews. */
+  images?: PreviewImage[];
+}
+
+export interface PreviewImage {
+  image_url: string | null;
+  thumbnail: string | null;
 }
 
 export interface Emoji {

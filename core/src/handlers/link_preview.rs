@@ -83,7 +83,40 @@ pub(crate) fn preview_from_row(
         thumbnail: r.get(base + 4)?,
         site_name: r.get(base + 5)?,
         author: r.get(base + 6)?,
+        images: Vec::new(),
     })
+}
+
+/// Fill `info.images` with the full ordered image list when the preview has
+/// extras: image 0 (the main row's `image_url`/`thumbnail`) followed by the
+/// `link_preview_images` rows (`position >= 1`). Left empty for the common
+/// single-image preview, so the client keeps rendering the lone thumbnail.
+pub(crate) fn attach_images(conn: &rusqlite::Connection, preview_id: &str, info: &mut LinkPreviewInfo) {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT image_url, thumbnail FROM link_preview_images
+         WHERE link_preview_id = ?1 ORDER BY position",
+    ) else {
+        return;
+    };
+    let extras: Vec<PreviewImage> = stmt
+        .query_map([preview_id], |r| {
+            Ok(PreviewImage {
+                image_url: r.get(0)?,
+                thumbnail: r.get(1)?,
+            })
+        })
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default();
+    if extras.is_empty() {
+        return;
+    }
+    let mut images = Vec::with_capacity(extras.len() + 1);
+    images.push(PreviewImage {
+        image_url: info.image_url.clone(),
+        thumbnail: info.thumbnail.clone(),
+    });
+    images.extend(extras);
+    info.images = images;
 }
 
 /// Whether a freshly-saved image with this extension should be background-
@@ -366,6 +399,7 @@ pub(crate) async fn save_original(dir: &str, original_name: &str, data: &[u8]) -
 pub(crate) enum AvifSwitch {
     PostImage(String),
     Preview(String),
+    PreviewImage(String),
     Emoji(String),
 }
 
@@ -407,6 +441,10 @@ pub(crate) fn spawn_avif_switch(db: Db, dir: &'static str, orig: String, switch:
                 ),
                 AvifSwitch::Preview(id) => conn.execute(
                     "UPDATE link_previews SET thumbnail = ?1 WHERE id = ?2",
+                    rusqlite::params![format!("/uploads/previews/{avif}"), id],
+                ),
+                AvifSwitch::PreviewImage(id) => conn.execute(
+                    "UPDATE link_preview_images SET thumbnail = ?1 WHERE id = ?2",
                     rusqlite::params![format!("/uploads/previews/{avif}"), id],
                 ),
                 AvifSwitch::Emoji(id) => conn.execute(
@@ -625,6 +663,8 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
     let mut image_url = None;
     let mut site_name = None;
     let mut author = None;
+    // Remote URLs of any images beyond the first (e.g. a tweet's 2nd–4th photo).
+    let mut extra_remote: Vec<String> = Vec::new();
 
     // OpenGraph from the page HTML. Skipped for X/Twitter (JS login wall) and
     // for Twitch targets resolved via GQL below.
@@ -696,6 +736,16 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
                     })
                     .or_else(|| tweet.pointer("/author/avatar_url").and_then(|v| v.as_str()))
                     .map(|s| s.to_string());
+                // A multi-photo tweet shows every photo in a grid: keep photos
+                // 2..n (capped at 4 total, matching X) as extras alongside the
+                // first. Only photos — a video's poster frame stays single.
+                if let Some(photos) = tweet.pointer("/media/photos").and_then(|v| v.as_array()) {
+                    for p in photos.iter().skip(1).take(3) {
+                        if let Some(u) = p.get("url").and_then(|v| v.as_str()) {
+                            extra_remote.push(u.to_string());
+                        }
+                    }
+                }
             }
             site_name.get_or_insert_with(|| "X".to_string());
         }
@@ -729,6 +779,25 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
         None
     };
 
+    // Download the extra grid images. The full `images` list (image 0 followed
+    // by these) is only populated when there are extras — single-image previews
+    // leave it empty and the client renders the lone thumbnail.
+    let mut images = Vec::new();
+    if !extra_remote.is_empty() {
+        images.push(PreviewImage {
+            image_url: image_url.clone(),
+            thumbnail: thumbnail.clone(),
+        });
+        for remote in &extra_remote {
+            let abs = resolve_url(url, remote);
+            let thumb = download_best(client, &thumbnail_candidates(&abs)).await;
+            images.push(PreviewImage {
+                image_url: Some(abs),
+                thumbnail: thumb,
+            });
+        }
+    }
+
     LinkPreviewInfo {
         url: url.to_string(),
         title,
@@ -737,6 +806,7 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
         thumbnail,
         site_name,
         author,
+        images,
     }
 }
 
@@ -764,6 +834,10 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
                 |r| Ok((r.get::<_, String>(0)?, preview_from_row(r, 1)?)),
             )
             .ok()
+            .map(|(id, mut info)| {
+                attach_images(&conn, &id, &mut info);
+                (id, info)
+            })
         };
 
         if let Some((id, info)) = cached {
@@ -782,6 +856,9 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
     // URL while we fetch; the shared DB mutex serializes us, so reusing whatever
     // appeared keeps one link to one preview row instead of two cards. Dynamic
     // Twitch channels intentionally snapshot per post and always insert.
+    // Ids of any inserted extra-image rows, paired by index with `info.images[1..]`
+    // so each can be background-converted to AVIF below.
+    let mut extra_image_ids: Vec<String> = Vec::new();
     let existing: Option<(String, LinkPreviewInfo)> = {
         let conn = db.lock().unwrap();
         let found = if dynamic {
@@ -794,6 +871,10 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
                 |r| Ok((r.get::<_, String>(0)?, preview_from_row(r, 1)?)),
             )
             .ok()
+            .map(|(id, mut info)| {
+                attach_images(&conn, &id, &mut info);
+                (id, info)
+            })
         };
         if found.is_none() {
             conn.execute(
@@ -811,25 +892,52 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
                 ],
             )
             .ok();
+            // Extra grid images (image 0 lives on the row above). Their ids are
+            // collected so each can be AVIF-converted in the background, like the
+            // main thumbnail.
+            for (pos, img) in info.images.iter().enumerate().skip(1) {
+                let img_id = Uuid::new_v4().to_string();
+                conn.execute(
+                    "INSERT INTO link_preview_images (id, link_preview_id, position, image_url, thumbnail)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![img_id, id, pos as i64, img.image_url, img.thumbnail],
+                )
+                .ok();
+                extra_image_ids.push(img_id);
+            }
         }
         found
     };
 
-    // Lost the race: reuse the row that won and discard the thumbnail we just
-    // downloaded (ours was never inserted, so nothing else will clean it up).
+    // Lost the race: reuse the row that won and discard the thumbnails we just
+    // downloaded (ours were never inserted, so nothing else will clean them up).
     if let Some(reused) = existing {
-        if let Some(name) = info.thumbnail.as_deref().and_then(|t| t.rsplit('/').next()) {
-            let _ = std::fs::remove_file(format!("uploads/previews/{}", name));
+        for thumb in std::iter::once(info.thumbnail.as_deref())
+            .chain(info.images.iter().map(|i| i.thumbnail.as_deref()))
+            .flatten()
+        {
+            if let Some(name) = thumb.rsplit('/').next() {
+                let _ = std::fs::remove_file(format!("uploads/previews/{}", name));
+            }
         }
         return Some(reused);
     }
 
-    // The thumbnail was saved in its original format — convert it to AVIF in the
-    // background, then switch the row to the `.avif` file.
-    if let Some(name) = info.thumbnail.as_deref().and_then(|t| t.rsplit('/').next()) {
+    // The thumbnails were saved in their original format — convert each to AVIF in
+    // the background, then switch the stored reference to the `.avif` file.
+    let spawn_convert = |orig: &str, switch: AvifSwitch| {
+        let name = orig.rsplit('/').next().unwrap_or(orig);
         let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
         if should_convert(&ext) {
-            spawn_avif_switch(db.clone(), "previews", name.to_string(), AvifSwitch::Preview(id.clone()));
+            spawn_avif_switch(db.clone(), "previews", name.to_string(), switch);
+        }
+    };
+    if let Some(thumb) = info.thumbnail.as_deref() {
+        spawn_convert(thumb, AvifSwitch::Preview(id.clone()));
+    }
+    for (img, img_id) in info.images.iter().skip(1).zip(&extra_image_ids) {
+        if let Some(thumb) = img.thumbnail.as_deref() {
+            spawn_convert(thumb, AvifSwitch::PreviewImage(img_id.clone()));
         }
     }
 

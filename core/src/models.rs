@@ -101,6 +101,20 @@ pub struct LinkPreviewInfo {
     pub thumbnail: Option<String>,
     pub site_name: Option<String>,
     pub author: Option<String>,
+    /// Every image in the preview, in order, when there is more than one (e.g. a
+    /// tweet with several photos). Image 0 mirrors `image_url`/`thumbnail`; the
+    /// rest are the extras. Empty for single-image previews — the client then
+    /// renders the lone `thumbnail`/`image_url` as before.
+    #[serde(default)]
+    pub images: Vec<PreviewImage>,
+}
+
+#[derive(Serialize, Clone, Deserialize)]
+pub struct PreviewImage {
+    /// Original (remote) image URL.
+    pub image_url: Option<String>,
+    /// Locally-saved copy, served from this server. Preferred by the client.
+    pub thumbnail: Option<String>,
 }
 
 #[derive(Deserialize)]

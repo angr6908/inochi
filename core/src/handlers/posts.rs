@@ -223,15 +223,24 @@ fn fetch_images(db: &rusqlite::Connection, post_id: &str) -> Vec<ImageInfo> {
 fn fetch_link_previews(db: &rusqlite::Connection, post_id: &str) -> Vec<LinkPreviewInfo> {
     let mut stmt = db
         .prepare(
-            "SELECT lp.url, lp.title, lp.description, lp.image_url, lp.thumbnail, lp.site_name, lp.author
+            "SELECT lp.id, lp.url, lp.title, lp.description, lp.image_url, lp.thumbnail, lp.site_name, lp.author
              FROM link_previews lp
              JOIN post_links pl ON lp.id = pl.link_preview_id
              WHERE pl.post_id = ?1",
         )
         .unwrap();
-    stmt.query_map([post_id], |r| link_preview::preview_from_row(r, 0))
+    let rows: Vec<(String, LinkPreviewInfo)> = stmt
+        .query_map([post_id], |r| {
+            Ok((r.get::<_, String>(0)?, link_preview::preview_from_row(r, 1)?))
+        })
         .unwrap()
         .filter_map(|r| r.ok())
+        .collect();
+    rows.into_iter()
+        .map(|(id, mut info)| {
+            link_preview::attach_images(db, &id, &mut info);
+            info
+        })
         .collect()
 }
 
