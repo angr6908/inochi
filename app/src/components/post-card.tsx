@@ -109,6 +109,12 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
   const sameAuthor = post.parent_post?.username === post.username;
   const showReference = !hideParent && !!post.parent_post;
   const hideOwnUsername = hideUsername || (showReference && sameAuthor);
+  // With no text, the empty content div collapses and the header's mb-2 (8px)
+  // collapses with the following block's mt-2 (8px) to an 8px gap. Bump the
+  // header's bottom margin to 10px in that case so the header→media gap matches
+  // the 10px text→reference / text→bottom rhythm. With text, it stays mb-2 so
+  // the header→text and text→media gaps are unaffected.
+  const hasText = post.content.trim().length > 0;
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
@@ -207,7 +213,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
     <Card id={post.id} className={cn("scroll-mt-20 gap-0 py-0", className)}>
       <CardContent className="p-4">
         {/* Header */}
-        <div className="mb-2 flex items-center gap-1.5 text-sm">
+        <div className={cn("flex items-center gap-1.5 text-sm", hasText ? "mb-2" : "mb-2.5")}>
           <span className="flex items-center gap-1.5">
             {!hideOwnUsername && (
               <>
@@ -323,7 +329,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
             card is clickable via a stretched overlay link (can't wrap in <a>
             because PostContent renders its own links). */}
         {!hideParent && post.parent_post && (
-          <div className="relative mt-3 rounded-lg border border-border/60 bg-muted/40 p-3 transition-colors hover:bg-muted/70">
+          <div className="relative mt-2.5 rounded-lg border border-border/60 bg-muted/40 p-3 transition-colors hover:bg-muted/70">
             <Link
               href={`/post/${post.parent_post.id}`}
               aria-label={`View post by ${post.parent_post.username}`}

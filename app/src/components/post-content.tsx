@@ -60,7 +60,7 @@ export const PostContent = memo(function PostContent({ content, priority }: { co
             <Link
               key={key++}
               href={`/?tag=${tag}`}
-              className="mx-px rounded-sm bg-primary/10 box-decoration-clone px-1.5 py-0.5 text-[0.9em] font-medium text-primary no-underline transition-colors hover:bg-primary hover:text-primary-foreground"
+              className="mx-px rounded-sm bg-primary/10 box-decoration-clone px-1.5 py-0.5 text-[0.9em] font-medium text-primary no-underline [vertical-align:0.042em] transition-colors hover:bg-primary hover:text-primary-foreground"
             >
               {tag}
             </Link>,

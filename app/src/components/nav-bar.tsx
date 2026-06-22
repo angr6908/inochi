@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth-context";
 import { preloadAboutFonts } from "@/lib/font-preload";
 import { requestHomeLogoReset } from "@/lib/home-reset";
@@ -32,6 +32,27 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
   const pathname = usePathname();
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  // Scroll position captured when the mobile search opens, so we can restore it
+  // on close. Focusing the search input (autoFocus) and the soft keyboard nudge
+  // the document's scroll by a few px; if that residual offset isn't undone it
+  // can cross the nav hairline's threshold, flipping the hairline on/off.
+  const scrollBeforeSearch = useRef(0);
+
+  const openSearch = () => {
+    scrollBeforeSearch.current = window.scrollY;
+    setSearchOpen(true);
+  };
+
+  const closeSearch = () => {
+    setSearchOpen(false);
+    const y = scrollBeforeSearch.current;
+    // Restore now and again after the keyboard finishes dismissing (iOS keeps
+    // adjusting scroll for a beat after blur). Instant, to bypass the global
+    // smooth scroll-behavior.
+    const restore = () => window.scrollTo({ top: y, left: 0, behavior: "instant" });
+    requestAnimationFrame(restore);
+    setTimeout(restore, 300);
+  };
 
   useEffect(() => {
     if (pathname === "/about") return;
@@ -81,7 +102,7 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
               onChange={(e) => setQuery(e.target.value)}
               className="h-9 min-w-0 flex-1"
             />
-            <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={() => setSearchOpen(false)}>
+            <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={closeSearch}>
               Cancel
             </Button>
           </form>
@@ -107,7 +128,7 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
                 size="icon"
                 aria-label="Search"
                 className="size-7 min-[400px]:hidden"
-                onClick={() => setSearchOpen(true)}
+                onClick={openSearch}
               >
                 <Search className="size-4" />
               </Button>
