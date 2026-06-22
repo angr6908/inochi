@@ -3,6 +3,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AuthProvider } from "@/lib/auth-context";
+import { TzProvider } from "@/lib/tz";
 import { NavBar } from "@/components/nav-bar";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -12,7 +13,7 @@ import { scrollToTop } from "@/lib/scroll";
 // viewport by this so it trips exactly at the nav's bottom edge.
 const NAV_HEIGHT = 56;
 
-export function Providers({ children, initialAuthed }: { children: React.ReactNode; initialAuthed: boolean }) {
+export function Providers({ children, initialAuthed, tz }: { children: React.ReactNode; initialAuthed: boolean; tz: string | undefined }) {
   // The nav's hairline shows only once content has scrolled up past the nav's
   // bottom edge. A zero-height sentinel at the top of the content, watched with
   // the nav's height shaved off the viewport top, flips `stuck` exactly at that
@@ -56,6 +57,7 @@ export function Providers({ children, initialAuthed }: { children: React.ReactNo
 
   return (
     <AuthProvider initialAuthed={initialAuthed}>
+      <TzProvider initial={tz}>
       <TooltipProvider>
         <NavBar scrolled={stuck} />
         <main className="mx-auto max-w-[600px] px-4 pt-2.5 pb-4 sm:px-0">
@@ -64,6 +66,7 @@ export function Providers({ children, initialAuthed }: { children: React.ReactNo
         </main>
         <Toaster />
       </TooltipProvider>
+      </TzProvider>
     </AuthProvider>
   );
 }

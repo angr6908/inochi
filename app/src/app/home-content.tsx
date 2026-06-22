@@ -10,8 +10,8 @@ import { PostFeed } from "@/components/post-feed";
 import { PostEditor } from "@/components/post-editor";
 import { PostListSkeleton } from "@/components/post-list-skeleton";
 import { PostPagination } from "@/components/post-pagination";
-import { preloadHigh, preloadImages } from "@/lib/image-loader";
-import { firstPostMediaUrls, pageImageUrls } from "@/lib/post-media";
+import { preloadImages } from "@/lib/image-loader";
+import { pageImageUrls } from "@/lib/post-media";
 import { preloadPostFonts, postFontsReady } from "@/lib/font-preload";
 import { scrollToTop } from "@/lib/scroll";
 
@@ -102,15 +102,13 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     if (posts.length === 0) return;
     const run = () => {
       preloadPostFonts(posts);
-      preloadImages(pageImageUrls(posts), () => {
-        for (const p of [page + 1, page - 1]) {
-          const neighbor = pageCache.get(cacheKey(activeTag, p));
-          if (neighbor) {
-            preloadPostFonts(neighbor.posts);
-            preloadImages(pageImageUrls(neighbor.posts));
-          }
+      for (const p of [page + 1, page - 1]) {
+        const neighbor = pageCache.get(cacheKey(activeTag, p));
+        if (neighbor) {
+          preloadPostFonts(neighbor.posts);
+          preloadImages(pageImageUrls(neighbor.posts));
         }
-      });
+      }
     };
     const w = window as typeof window & {
       requestIdleCallback?: (cb: () => void) => number;
@@ -130,7 +128,6 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     // Cache hit → render instantly, no loading state or async swap.
     const cached = pageCache.get(cacheKey(tag, p));
     if (cached) {
-      preloadHigh(...firstPostMediaUrls(cached.posts));
       await postFontsReady(cached.posts);
       if (myReq !== reqRef.current) return;
       setLoadedPages((prev) => withPage(prev, p, cached.posts));
@@ -149,7 +146,6 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       const [postsRes] = await Promise.all([getPosts(p, 20, tag), loadEmojis()]);
       if (myReq !== reqRef.current) return;
       pageCache.set(cacheKey(tag, postsRes.page), { posts: postsRes.posts, pages: postsRes.pages });
-      preloadHigh(...firstPostMediaUrls(postsRes.posts));
       setLoadedPages((prev) => withPage(prev, postsRes.page, postsRes.posts));
       setPages(postsRes.pages);
       setPage(postsRes.page);
@@ -178,7 +174,6 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     seededRef.current = true;
     pageCache.set(cacheKey(tagParam, seedServer.page), { posts: seedServer.posts, pages: seedServer.pages });
     homeCache = { tag: tagParam, posts: seedServer.posts, page: seedServer.page, pages: seedServer.pages };
-    preloadHigh(...firstPostMediaUrls(seedServer.posts));
     loadEmojis();
     prefetchNeighbors(seedServer.page, tagParam, seedServer.pages);
   }, [snap, seedServer, tagParam]);

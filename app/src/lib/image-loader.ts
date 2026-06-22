@@ -3,6 +3,26 @@ const preloadQueue: string[] = [];
 const drainCallbacks: Array<() => void> = [];
 let preloading = false;
 
+// A detached `new Image()` with no live reference can be garbage-collected
+// while its request is still in flight; when it shares a resource with a visible
+// `<img>`, that GC drops the decoded bitmap and forces the on-screen image to
+// re-decode — a flicker. Hold each preloader until it settles, then release it.
+const inflight = new Set<HTMLImageElement>();
+
+function preload(url: string, priority: "high" | "low", onSettle?: () => void) {
+  const img = new Image();
+  img.setAttribute("fetchpriority", priority);
+  inflight.add(img);
+  const done = () => {
+    inflight.delete(img);
+    preloaded.add(url);
+    onSettle?.();
+  };
+  img.onload = done;
+  img.onerror = done;
+  img.src = url;
+}
+
 function pumpPreload() {
   if (preloading) return;
   let url = preloadQueue.shift();
@@ -11,27 +31,18 @@ function pumpPreload() {
     if (drainCallbacks.length) drainCallbacks.splice(0).forEach((cb) => cb());
     return;
   }
-  const target = url;
   preloading = true;
-  const img = new Image();
-  img.setAttribute("fetchpriority", "low");
-  const done = () => {
-    preloaded.add(target);
+  preload(url, "low", () => {
     preloading = false;
     pumpPreload();
-  };
-  img.onload = done;
-  img.onerror = done;
-  img.src = target;
+  });
 }
 
 export function preloadHigh(...urls: string[]) {
   for (const url of urls) {
     if (preloaded.has(url)) continue;
     preloaded.add(url);
-    const img = new Image();
-    img.setAttribute("fetchpriority", "high");
-    img.src = url;
+    preload(url, "high");
   }
 }
 

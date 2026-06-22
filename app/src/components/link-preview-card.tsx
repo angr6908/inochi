@@ -14,7 +14,6 @@ import {
 } from "simple-icons";
 import { LinkPreview } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { useImageReveal } from "@/lib/use-image-reveal";
 
 function PreviewThumb({
   src,
@@ -27,7 +26,6 @@ function PreviewThumb({
   priority?: boolean;
   className?: string;
 }) {
-  const { onMount, onReveal, revealClass } = useImageReveal();
   return (
     // eslint-disable-next-line @next/next/no-img-element
     <img
@@ -35,10 +33,8 @@ function PreviewThumb({
       alt={alt}
       loading={priority ? "eager" : "lazy"}
       fetchPriority={priority ? "high" : undefined}
-      decoding="async"
-      ref={onMount}
-      onLoad={onReveal}
-      className={cn(className, revealClass)}
+      decoding="sync"
+      className={className}
     />
   );
 }
@@ -370,16 +366,6 @@ function BrandMark({ icon, className }: { icon: BrandIcon; className?: string })
 export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; priority?: boolean }) {
   const [playing, setPlaying] = useState(false);
   const [thumbFit, setThumbFit] = useState<"cover" | "contain" | null>(null);
-  // Only fade thumbnails that actually had to download. A cached image is
-  // already decoded when its <img> first commits, so `measureThumb` reveals it
-  // (opacity-100) in that same pre-paint commit — while the fade is still off —
-  // and it snaps in instantly. Arming on the next frame means only thumbnails
-  // still loading by then animate in, instead of every cached card flashing.
-  const [fadeArmed, setFadeArmed] = useState(false);
-  useEffect(() => {
-    const id = requestAnimationFrame(() => setFadeArmed(true));
-    return () => cancelAnimationFrame(id);
-  }, []);
   const image = preview.thumbnail ?? preview.image_url;
   const visible = !!(preview.title || preview.description || preview.author);
 
@@ -457,14 +443,14 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
               alt={preview.title ?? ""}
               loading={priority ? "eager" : "lazy"}
               fetchPriority={priority ? "high" : undefined}
-              decoding="async"
+              decoding="sync"
               ref={measureThumb}
               onLoad={(e) => measureThumb(e.currentTarget)}
               className={cn(
                 "h-full w-full",
-                fadeArmed && "transition-opacity duration-200",
-                thumbFit === "cover" ? "object-cover" : "object-contain",
-                thumbFit ? "opacity-100" : "opacity-0",
+                (thumbFit ?? (isYoutube ? "cover" : "contain")) === "cover"
+                  ? "object-cover"
+                  : "object-contain",
               )}
             />
           ) : (

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Post, updatePost, deletePost, getPost } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
+import { useTz } from "@/lib/tz";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -48,26 +49,51 @@ const MONTHS = [
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 ];
 
-function sameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
+interface Ymdhm {
+  year: number;
+  month: number;
+  day: number;
+  hour: number;
+  minute: number;
 }
 
-function timeAgo(dateStr: string): string {
-  // Stored as UTC; parsed and displayed in the viewer's local time.
+// The viewer's calendar fields for an instant, in a given IANA timezone. Driven
+// by `tz` (not the runtime's local zone) so the server — which runs in UTC —
+// produces the exact same fields the browser does, instead of a different
+// string that flickers on hydration.
+function partsInTz(d: Date, tz: string | undefined): Ymdhm {
+  const f = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const p: Record<string, string> = {};
+  for (const part of f.formatToParts(d)) p[part.type] = part.value;
+  return {
+    year: Number(p.year),
+    month: Number(p.month) - 1,
+    day: Number(p.day),
+    hour: Number(p.hour),
+    minute: Number(p.minute),
+  };
+}
+
+function sameDay(a: Ymdhm, b: Ymdhm): boolean {
+  return a.year === b.year && a.month === b.month && a.day === b.day;
+}
+
+function timeAgo(dateStr: string, tz: string | undefined): string {
+  // Stored as UTC; displayed in the viewer's timezone (carried by the `tz`
+  // cookie so the server renders the same string the client computes).
   const then = new Date(dateStr + "Z");
   const now = new Date();
   const diffMs = now.getTime() - then.getTime();
 
-  const hhmm = `${String(then.getHours()).padStart(2, "0")}:${String(
-    then.getMinutes(),
-  ).padStart(2, "0")}`;
-  const monDay = `${MONTHS[then.getMonth()]} ${then.getDate()}`;
-
-  // Under 12 hours → relative (hours, then minutes, then seconds below a minute).
+  // Under 12 hours → relative (timezone-independent).
   const diffMin = diffMs / 60000;
   if (diffMin < 12 * 60) {
     if (diffMin < 1) return `${Math.max(0, Math.floor(diffMs / 1000))}s`;
@@ -75,20 +101,25 @@ function timeAgo(dateStr: string): string {
     return `${Math.floor(diffMin / 60)}h`;
   }
 
+  const tp = partsInTz(then, tz);
+  const np = partsInTz(now, tz);
+  const hhmm = `${String(tp.hour).padStart(2, "0")}:${String(tp.minute).padStart(2, "0")}`;
+  const monDay = `${MONTHS[tp.month]} ${tp.day}`;
+
   // ≥ 12 hours but still today → just "HH:MM".
-  if (sameDay(then, now)) return hhmm;
+  if (sameDay(tp, np)) return hhmm;
 
   // Yesterday → "Yesterday HH:MM".
-  const yesterday = new Date(now);
-  yesterday.setDate(now.getDate() - 1);
-  if (sameDay(then, yesterday)) return `Yesterday ${hhmm}`;
+  const yp = partsInTz(new Date(now.getTime() - 24 * 60 * 60 * 1000), tz);
+  if (sameDay(tp, yp)) return `Yesterday ${hhmm}`;
 
   // Earlier this year → "Mon D HH:MM"; previous years prefix the year.
-  if (then.getFullYear() === now.getFullYear()) return `${monDay} ${hhmm}`;
-  return `${then.getFullYear()} ${monDay} ${hhmm}`;
+  if (tp.year === np.year) return `${monDay} ${hhmm}`;
+  return `${tp.year} ${monDay} ${hhmm}`;
 }
 
 function TimeAgo({ date }: { date: string }) {
+  const tz = useTz();
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -107,7 +138,7 @@ function TimeAgo({ date }: { date: string }) {
     return () => clearTimeout(timer);
   }, [date]);
 
-  return <>{timeAgo(date)}</>;
+  return <span suppressHydrationWarning>{timeAgo(date, tz)}</span>;
 }
 
 interface PostCardProps {

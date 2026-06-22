@@ -61,6 +61,7 @@ export function generateMetadata(): Metadata {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const [cookieStore, emojis] = await Promise.all([cookies(), fetchEmojis()]);
   const authed = cookieStore.get("auth")?.value === "1";
+  const tz = cookieStore.get("tz")?.value;
   return (
     <html
       lang="en"
@@ -78,7 +79,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           }}
         />
         <SeedEmojis emojis={emojis} />
-        <Providers initialAuthed={authed}>{children}</Providers>
+        <Providers initialAuthed={authed} tz={tz}>{children}</Providers>
       </body>
     </html>
   );

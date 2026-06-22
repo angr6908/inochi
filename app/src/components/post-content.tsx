@@ -11,6 +11,7 @@ export const PostContent = memo(function PostContent({ content, priority }: { co
   const [loaded, setLoaded] = useState<boolean>(() => cachedEmojis() != null);
 
   useEffect(() => {
+    if (loaded) return;
     let active = true;
     loadEmojis().then((e) => {
       if (!active) return;
@@ -20,7 +21,7 @@ export const PostContent = memo(function PostContent({ content, priority }: { co
     return () => {
       active = false;
     };
-  }, []);
+  }, [loaded]);
 
   // The shortcode→url lookup only depends on the emoji set, so it survives
   // content changes (re-renders while editing) without being rebuilt.
@@ -68,7 +69,7 @@ export const PostContent = memo(function PostContent({ content, priority }: { co
           const url = emojiUrl.get(m[3]);
           if (url) {
             // eslint-disable-next-line @next/next/no-img-element
-            out.push(<img key={key++} src={url} alt={m[3]} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : undefined} decoding="async" className="inline-block h-5 w-5 align-text-bottom" />);
+            out.push(<img key={key++} src={url} alt={m[3]} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : undefined} decoding="sync" className="inline-block h-5 w-5 align-text-bottom" />);
           } else if (!loaded) {
             out.push(<span key={key++} aria-hidden className="inline-block h-5 w-5 align-text-bottom" />);
           } else {
