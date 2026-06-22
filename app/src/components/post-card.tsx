@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { Post, updatePost, deletePost, getPost } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useTz } from "@/lib/tz";
+import { formatTimestamp } from "@/lib/format-time";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -44,86 +45,12 @@ function parsePostId(input: string): string | null {
   return null;
 }
 
-const MONTHS = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-
-interface Ymdhm {
-  year: number;
-  month: number;
-  day: number;
-  hour: number;
-  minute: number;
-}
-
-// The viewer's calendar fields for an instant, in a given IANA timezone. Driven
-// by `tz` (not the runtime's local zone) so the server — which runs in UTC —
-// produces the exact same fields the browser does, instead of a different
-// string that flickers on hydration.
-function partsInTz(d: Date, tz: string | undefined): Ymdhm {
-  const f = new Intl.DateTimeFormat("en-US", {
-    timeZone: tz,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23",
-  });
-  const p: Record<string, string> = {};
-  for (const part of f.formatToParts(d)) p[part.type] = part.value;
-  return {
-    year: Number(p.year),
-    month: Number(p.month) - 1,
-    day: Number(p.day),
-    hour: Number(p.hour),
-    minute: Number(p.minute),
-  };
-}
-
-function sameDay(a: Ymdhm, b: Ymdhm): boolean {
-  return a.year === b.year && a.month === b.month && a.day === b.day;
-}
-
-function timeAgo(dateStr: string, tz: string | undefined): string {
-  // Stored as UTC; displayed in the viewer's timezone (carried by the `tz`
-  // cookie so the server renders the same string the client computes).
-  const then = new Date(dateStr + "Z");
-  const now = new Date();
-  const diffMs = now.getTime() - then.getTime();
-
-  // Under 12 hours → relative (timezone-independent).
-  const diffMin = diffMs / 60000;
-  if (diffMin < 12 * 60) {
-    if (diffMin < 1) return `${Math.max(0, Math.floor(diffMs / 1000))}s`;
-    if (diffMin < 60) return `${Math.floor(diffMin)}m`;
-    return `${Math.floor(diffMin / 60)}h`;
-  }
-
-  const tp = partsInTz(then, tz);
-  const np = partsInTz(now, tz);
-  const hhmm = `${String(tp.hour).padStart(2, "0")}:${String(tp.minute).padStart(2, "0")}`;
-  const monDay = `${MONTHS[tp.month]} ${tp.day}`;
-
-  // ≥ 12 hours but still today → just "HH:MM".
-  if (sameDay(tp, np)) return hhmm;
-
-  // Yesterday → "Yesterday HH:MM".
-  const yp = partsInTz(new Date(now.getTime() - 24 * 60 * 60 * 1000), tz);
-  if (sameDay(tp, yp)) return `Yesterday ${hhmm}`;
-
-  // Earlier this year → "Mon D HH:MM"; previous years prefix the year.
-  if (tp.year === np.year) return `${monDay} ${hhmm}`;
-  return `${tp.year} ${monDay} ${hhmm}`;
-}
-
 function TimeAgo({ date }: { date: string }) {
   const tz = useTz();
   const [, setTick] = useState(0);
 
   useEffect(() => {
-    const then = new Date(date + "Z").getTime();
+    const then = new Date(date.replace(" ", "T") + "Z").getTime();
     let timer: ReturnType<typeof setTimeout>;
     const schedule = () => {
       const age = Date.now() - then;
@@ -138,7 +65,11 @@ function TimeAgo({ date }: { date: string }) {
     return () => clearTimeout(timer);
   }, [date]);
 
-  return <span suppressHydrationWarning>{timeAgo(date, tz)}</span>;
+  return (
+    <time dateTime={date} data-ts={date} suppressHydrationWarning>
+      {formatTimestamp(date, tz, Date.now())}
+    </time>
+  );
 }
 
 interface PostCardProps {

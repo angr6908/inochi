@@ -10,6 +10,7 @@ import "./globals.css";
 import { Providers } from "./providers";
 import { SeedEmojis } from "@/components/seed-emojis";
 import { fetchEmojis } from "@/lib/ssr";
+import { formatTimestamp } from "@/lib/format-time";
 import { SITE_NAME, SITE_DESCRIPTION, resolveOrigin } from "@/lib/site";
 
 const roboto = Roboto({
@@ -76,6 +77,13 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <script
           dangerouslySetInnerHTML={{
             __html: `if ('scrollRestoration' in history) history.scrollRestoration = 'manual';`,
+          }}
+        />
+        {/* Format every <time data-ts> in the viewer's zone before it paints,
+            so a first visit (no tz cookie yet) is correct with no flash. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){var f=${formatTimestamp.toString()};function a(e){var t=e.getAttribute('data-ts');if(t){try{e.textContent=f(t,undefined,Date.now());}catch(_){}}}function s(n){if(!n||n.nodeType!==1)return;if(n.matches&&n.matches('time[data-ts]'))a(n);var l=n.querySelectorAll&&n.querySelectorAll('time[data-ts]');if(l)for(var i=0;i<l.length;i++)a(l[i]);}s(document.documentElement);new MutationObserver(function(m){for(var i=0;i<m.length;i++){var x=m[i].addedNodes;for(var j=0;j<x.length;j++)s(x[j]);}}).observe(document.documentElement,{childList:true,subtree:true});})();`,
           }}
         />
         <SeedEmojis emojis={emojis} />
