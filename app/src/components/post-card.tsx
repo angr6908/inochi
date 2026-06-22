@@ -299,7 +299,14 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
         </div>
 
         {/* Content */}
-        <div className="font-content text-base leading-relaxed">
+        {/* The card's bottom padding (p-4 = 16px) is larger than the gap text
+            sits above images/link previews (mt-2 = 8px), so a text-only card's
+            bottom reads roomier than text-with-media. When the text is the last
+            block, pull it down so the gap to the card edge lands at 10px — close
+            to the text→media gap (a touch more to seat against the border/divider).
+            Scoped to :last-child so it never collapses the spacing when
+            media/reference actually follows. */}
+        <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[6px]">
           <PostContent content={post.content} priority={priority} />
         </div>
 
@@ -329,7 +336,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
                 <TimeAgo date={post.parent_post.created_at} />
               </span>
             </div>
-            <div className="font-content text-base leading-relaxed [&_a]:relative [&_a]:z-20">
+            <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[2px] [&_a]:relative [&_a]:z-20">
               <PostContent content={post.parent_post.content} />
             </div>
             {post.parent_post.images.length > 0 && (
