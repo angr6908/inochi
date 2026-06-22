@@ -64,9 +64,19 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html
       lang="en"
+      data-scroll-behavior="smooth"
       className={`${GeistSans.variable} ${roboto.variable} ${notoSansJP.variable}`}
     >
       <body className="antialiased">
+        {/* Start every fresh load/refresh at the top: disable the browser's
+            automatic scroll restoration. In-app navigation manages its own
+            position (the home timeline restores its scroll explicitly). Runs
+            during HTML parse so it beats the browser's restore. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if ('scrollRestoration' in history) history.scrollRestoration = 'manual';`,
+          }}
+        />
         <SeedEmojis emojis={emojis} />
         <Providers initialAuthed={authed}>{children}</Providers>
       </body>

@@ -1,4 +1,4 @@
-FROM oven/bun:alpine AS web
+FROM oven/bun:1.3.14-alpine AS web
 WORKDIR /web
 ARG APP_VERSION=dev
 ARG BUILD_DATE=
@@ -10,7 +10,7 @@ RUN bun install
 COPY app/ ./
 RUN bun run build
 
-FROM rust:alpine AS backend
+FROM rust:1.96.0-alpine AS backend
 RUN apk add --no-cache build-base openssl-dev openssl-libs-static pkgconfig
 ENV OPENSSL_STATIC=1
 WORKDIR /src

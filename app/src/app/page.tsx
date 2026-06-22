@@ -16,7 +16,7 @@ export default async function HomePage({
 
   return (
     <Suspense fallback={<Skeleton className="h-32 w-full" />}>
-      <HomeContent initial={initial} initialTag={tag} />
+      <HomeContent key={tag ?? ""} initial={initial} initialTag={tag} />
     </Suspense>
   );
 }

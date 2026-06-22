@@ -63,15 +63,15 @@ async fn main() {
         // Posts
         .route("/api/posts", get(handlers::posts::list_posts))
         .route("/api/posts", post(handlers::posts::create_post))
-        .route("/api/posts/:id", get(handlers::posts::get_post))
-        .route("/api/posts/:id", put(handlers::posts::update_post))
-        .route("/api/posts/:id", delete(handlers::posts::delete_post))
+        .route("/api/posts/{id}", get(handlers::posts::get_post))
+        .route("/api/posts/{id}", put(handlers::posts::update_post))
+        .route("/api/posts/{id}", delete(handlers::posts::delete_post))
         // Tags
         .route("/api/tags", get(handlers::tags::list_tags))
         // Emojis
         .route("/api/emojis", get(handlers::emojis::list_emojis))
         .route("/api/emojis", post(handlers::emojis::upload_emoji))
-        .route("/api/emojis/:id", delete(handlers::emojis::delete_emoji))
+        .route("/api/emojis/{id}", delete(handlers::emojis::delete_emoji))
         // Search
         .route("/api/search", get(handlers::search::search_posts))
         // Link preview

@@ -76,7 +76,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
   const [restore] = useState(() => !resetFromLogo && homeCache !== null && homeCache.tag === tagParam);
   const snap = restore ? homeCache! : null;
 
-  const seedServer = !snap && !resetFromLogo && initial && initialTag === tagParam ? initial : null;
+  const seedServer = !snap && initial && initialTag === tagParam ? initial : null;
   const seed: HomeCache | null =
     snap ?? (seedServer ? { tag: tagParam, ...seedServer } : null);
 
@@ -191,11 +191,14 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       scrollToTop();
       return;
     }
-    if (!restore || !homeCache) return;
-    const snapshot = homeCache;
-    window.scrollTo({ top: homeScrollY, behavior: "instant" });
-    pageCache.set(cacheKey(snapshot.tag, snapshot.page), { posts: snapshot.posts, pages: snapshot.pages });
-    prefetchNeighbors(snapshot.page, snapshot.tag, snapshot.pages);
+    if (restore && homeCache) {
+      const snapshot = homeCache;
+      window.scrollTo({ top: homeScrollY, behavior: "instant" });
+      pageCache.set(cacheKey(snapshot.tag, snapshot.page), { posts: snapshot.posts, pages: snapshot.pages });
+      prefetchNeighbors(snapshot.page, snapshot.tag, snapshot.pages);
+      return;
+    }
+    scrollToTop();
   }, [resetFromLogo, restore]);
 
   useEffect(() => {
@@ -206,18 +209,11 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const loadedTag = useRef<{ v: string | undefined } | null>(seed ? { v: tagParam } : null);
+  const seeded = useRef(seed !== null);
   useEffect(() => {
-    const prev = loadedTag.current;
-    if (prev && prev.v === tagParam) return;
-    loadedTag.current = { v: tagParam };
-    if (prev) setLoadedPages(new Map());
+    if (seeded.current) return;
+    seeded.current = true;
     load(1, tagParam);
-    // Clicking a #hashtag swaps the tag in place (same `/` route, no remount),
-    // so the scroll position carries over from the previous feed — pin to the
-    // top of the new one. Skip the initial mount (`prev === null`), where the
-    // route navigation (or cache restore) already settles the scroll.
-    if (prev) scrollToTop();
   }, [tagParam, load]);
 
   // Clicking the logo while already on the timeline resets to page 1 (clearing
@@ -226,12 +222,11 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     const reset = () => {
       setActiveTag(undefined);
       window.history.replaceState(null, "", "/");
-      resetPages();
       load(1, undefined);
     };
     window.addEventListener("home:reset", reset);
     return () => window.removeEventListener("home:reset", reset);
-  }, [load, resetPages]);
+  }, [load]);
 
   const changePage = (n: number) => {
     if (loadedPages.has(n)) {

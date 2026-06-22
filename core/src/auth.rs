@@ -1,4 +1,3 @@
-use async_trait::async_trait;
 use axum::{
     extract::FromRequestParts,
     http::{header, request::Parts, StatusCode},
@@ -44,7 +43,6 @@ fn verify_token(token: &str) -> Result<String, StatusCode> {
 /// Extractor that validates JWT and provides user_id
 pub struct AuthUser(pub String);
 
-#[async_trait]
 impl<S: Send + Sync> FromRequestParts<S> for AuthUser {
     type Rejection = StatusCode;
 
