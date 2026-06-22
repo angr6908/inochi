@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useSyncExternalStore } from "react";
 
 // The viewer's IANA timezone (e.g. "America/Los_Angeles"), seeded on the server
 // from the `tz` cookie so timestamps render in the viewer's zone during SSR —
@@ -20,14 +20,20 @@ export function TzProvider({
   initial: string | undefined;
   children: React.ReactNode;
 }) {
-  const [tz, setTz] = useState(initial);
+  // SSR (and the hydrating render) read `initial` from the cookie so the markup
+  // matches; once mounted the client snapshot takes over with the browser's real
+  // zone, re-rendering timestamps into it when the cookie was absent or stale.
+  const tz = useSyncExternalStore(
+    () => () => {},
+    () => Intl.DateTimeFormat().resolvedOptions().timeZone,
+    () => initial,
+  );
 
+  // Persist a corrected zone so the next SSR is already seeded with it.
   useEffect(() => {
-    const real = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (!real || real === tz) return;
-    document.cookie = `tz=${encodeURIComponent(real)}; path=/; max-age=31536000; samesite=lax`;
-    setTz(real);
-  }, [tz]);
+    if (!tz || tz === initial) return;
+    document.cookie = `tz=${encodeURIComponent(tz)}; path=/; max-age=31536000; samesite=lax`;
+  }, [tz, initial]);
 
   return <TzContext.Provider value={tz}>{children}</TzContext.Provider>;
 }

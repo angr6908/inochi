@@ -114,21 +114,13 @@ export const getPost = (id: string) =>
 export const createPost = (formData: FormData) =>
   request<{ post: Post }>("/api/posts", { method: "POST", body: formData });
 
-// `parentPostId` controls the echo link: omit (undefined) to leave it as is,
-// pass `null` to unlink into an independent post, or a post id to make this an
-// echo of that post.
-export const updatePost = (
-  id: string,
-  content: string,
-  parentPostId?: string | null,
-) => {
-  const body: { content: string; parent_post_id?: string | null } = { content };
-  if (parentPostId !== undefined) body.parent_post_id = parentPostId;
-  return request<{ post: Post }>(`/api/posts/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(body),
-  });
-};
+// Multipart, mirroring `createPost`: carries `content`, optional `images` files,
+// and an `image_order` JSON array describing the final image list (existing
+// image ids and `new:<n>` tokens for uploads). The echo link is controlled by
+// the `parent_post_id` field: omit it to leave the link as is, send an empty
+// string to unlink into an independent post, or a post id to echo that post.
+export const updatePost = (id: string, formData: FormData) =>
+  request<{ post: Post }>(`/api/posts/${id}`, { method: "PUT", body: formData });
 
 export const deletePost = (id: string) =>
   request<{ message: string }>(`/api/posts/${id}`, { method: "DELETE" });

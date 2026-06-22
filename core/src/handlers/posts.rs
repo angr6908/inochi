@@ -578,16 +578,134 @@ pub async fn get_post(
     Ok(Json(PostDetailResponse { post, followups }))
 }
 
+/// A position in the post's edited image list: a kept existing image (by id) or
+/// one of the newly uploaded files (by its index in `uploads`).
+enum ImageSlot {
+    Existing(String),
+    New(usize),
+}
+
+/// Parse a `new:<n>` image-order token into its upload index.
+fn parse_new_token(token: &str) -> Option<usize> {
+    token.strip_prefix("new:").and_then(|n| n.parse().ok())
+}
+
 pub async fn update_post(
     AuthUser(user_id): AuthUser,
     State(db): State<Db>,
     Path(id): Path<String>,
-    Json(body): Json<UpdatePostRequest>,
+    mut multipart: Multipart,
 ) -> Result<Json<serde_json::Value>, ApiError> {
+    let mut content = String::new();
+    // Echo (parent) link change, three states preserved across multipart (which
+    // has no JSON null): the field absent leaves it `None` (unchanged); present
+    // and empty is `Some(None)` (unlink); present with a value is `Some(Some)`.
+    let mut parent_change: Option<Option<String>> = None;
+    // Desired final image order, as tokens (an existing image id, or `new:<n>`
+    // for the nth uploaded file). Absent means "leave images untouched".
+    let mut image_order: Option<Vec<String>> = None;
+    // Newly uploaded files in arrival order: (original_name, data).
+    let mut uploads: Vec<(String, Vec<u8>)> = Vec::new();
+
+    while let Ok(Some(field)) = multipart.next_field().await {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "content" => {
+                content = field.text().await.unwrap_or_default();
+            }
+            "parent_post_id" => {
+                let val = field.text().await.unwrap_or_default();
+                parent_change = Some(if val.is_empty() { None } else { Some(val) });
+            }
+            "image_order" => {
+                let val = field.text().await.unwrap_or_default();
+                image_order = serde_json::from_str::<Vec<String>>(&val).ok();
+            }
+            "images" => {
+                let original_name = field.file_name().unwrap_or("image.png").to_string();
+                let data = field.bytes().await.unwrap_or_default().to_vec();
+                if !data.is_empty() {
+                    uploads.push((original_name, data));
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // Plan the edited image list before any destructive work, so a rejected edit
+    // leaves the post (and its files) untouched. `slots` is the final order;
+    // `kept` is the set of existing image ids that survive (everything else the
+    // post currently holds is removed); `used_new` tracks which uploads are
+    // actually referenced (the rest are discarded, never written).
+    let (slots, kept, used_new): (Vec<ImageSlot>, std::collections::HashSet<String>, Vec<usize>) =
+        if let Some(ref order) = image_order {
+            let existing: std::collections::HashSet<String> = {
+                let conn = db.conn();
+                query_ids(&conn, "SELECT id FROM post_images WHERE post_id = ?1", [&id])
+                    .into_iter()
+                    .collect()
+            };
+            let mut slots = Vec::new();
+            let mut kept = std::collections::HashSet::new();
+            let mut used_new = Vec::new();
+            for token in order {
+                if let Some(n) = parse_new_token(token) {
+                    if n < uploads.len() && !used_new.contains(&n) {
+                        used_new.push(n);
+                        slots.push(ImageSlot::New(n));
+                    }
+                } else if existing.contains(token) && kept.insert(token.clone()) {
+                    slots.push(ImageSlot::Existing(token.clone()));
+                }
+            }
+            (slots, kept, used_new)
+        } else {
+            // No image_order field: keep whatever the post already has.
+            (Vec::new(), std::collections::HashSet::new(), Vec::new())
+        };
+
+    // A post must still carry text or at least one image after the edit.
+    if image_order.is_some() && content.trim().is_empty() && slots.is_empty() {
+        return Err(err(StatusCode::BAD_REQUEST, "Content or an image is required"));
+    }
+
+    // Persist only the uploads that are actually referenced by the order, keyed
+    // by their upload index. Done before the DB write but after planning, so a
+    // failure here can't leave the row half-updated.
+    let mut new_saved: std::collections::HashMap<usize, SavedImage> = std::collections::HashMap::new();
+    for &n in &used_new {
+        let (original_name, data) = &uploads[n];
+        let (width, height) = imagesize::blob_size(data)
+            .map(|s| (s.width as i64, s.height as i64))
+            .ok()
+            .unzip();
+        let (filename, convert) = link_preview::save_original("images", original_name, data)
+            .await
+            .ok_or_else(|| {
+                // Roll back any files already written this request before bailing.
+                for s in new_saved.values() {
+                    let _ = std::fs::remove_file(format!("uploads/images/{}", s.filename));
+                }
+                err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to save image")
+            })?;
+        new_saved.insert(
+            n,
+            SavedImage {
+                filename,
+                original_name: original_name.clone(),
+                convert,
+                width,
+                height,
+            },
+        );
+    }
+
     // Whether the set of URLs in the post changed. Only then do we re-resolve
     // link previews (which re-downloads images and regenerates thumbnails).
     // Editing tags — or any other text while the links stay the same — leaves
     // the existing previews, and their thumbnails, untouched.
+    let mut removed_files: Vec<String> = Vec::new();
+    let mut to_convert: Vec<(String, String)> = Vec::new();
     let links_changed = {
         let conn = db.conn();
 
@@ -596,7 +714,7 @@ pub async fn update_post(
 
         // Validate any echo (parent) link change before touching the row, so a
         // rejected re-parent leaves the post completely unmodified.
-        if let Some(Some(new_parent)) = body.parent_post_id.as_ref() {
+        if let Some(Some(new_parent)) = parent_change.as_ref() {
             if new_parent == &id {
                 return Err(err(StatusCode::BAD_REQUEST, "A post can't echo itself"));
             }
@@ -622,22 +740,67 @@ pub async fn update_post(
         // Fold any echo (parent) link change into the same row write: `Some`
         // carries the new value (a string to link, NULL to unlink), `None`
         // leaves parent_post_id untouched.
-        match &body.parent_post_id {
+        match &parent_change {
             Some(new_parent) => conn.execute(
                 "UPDATE posts SET content = ?1, updated_at = ?2, parent_post_id = ?3 WHERE id = ?4",
-                rusqlite::params![body.content.trim(), now, new_parent, id],
+                rusqlite::params![content.trim(), now, new_parent, id],
             ),
             None => conn.execute(
                 "UPDATE posts SET content = ?1, updated_at = ?2 WHERE id = ?3",
-                rusqlite::params![body.content.trim(), now, id],
+                rusqlite::params![content.trim(), now, id],
             ),
         }
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to update post"))?;
 
+        // Apply the image edit only when an order was supplied.
+        if image_order.is_some() {
+            // Drop images the edit removed: collect their files for deletion
+            // (after the row goes away, so nothing dangles), then delete rows.
+            let removed: Vec<(String, String)> = query_rows(
+                &conn,
+                "SELECT id, filename FROM post_images WHERE post_id = ?1",
+                [&id],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .into_iter()
+            .filter(|(img_id, _)| !kept.contains(img_id))
+            .collect();
+            for (img_id, filename) in &removed {
+                conn.execute("DELETE FROM post_images WHERE id = ?1", [img_id])
+                    .ok();
+                removed_files.push(filename.clone());
+            }
+
+            // Write the final order: reposition kept images, insert new ones.
+            for (position, slot) in slots.iter().enumerate() {
+                match slot {
+                    ImageSlot::Existing(img_id) => {
+                        conn.execute(
+                            "UPDATE post_images SET position = ?1 WHERE id = ?2",
+                            rusqlite::params![position as i32, img_id],
+                        )
+                        .ok();
+                    }
+                    ImageSlot::New(n) => {
+                        let img = &new_saved[n];
+                        let img_id = Uuid::new_v4().to_string();
+                        conn.execute(
+                            "INSERT INTO post_images (id, post_id, filename, original_name, position, width, height) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                            rusqlite::params![img_id, id, img.filename, img.original_name, position as i32, img.width, img.height],
+                        )
+                        .ok();
+                        if img.convert {
+                            to_convert.push((img_id, img.filename.clone()));
+                        }
+                    }
+                }
+            }
+        }
+
         // Re-extract tags
         conn.execute("DELETE FROM post_tags WHERE post_id = ?1", [&id])
             .ok();
-        for tag in extract_tags(&body.content) {
+        for tag in extract_tags(&content) {
             conn.execute(
                 "INSERT OR IGNORE INTO post_tags (post_id, tag) VALUES (?1, ?2)",
                 rusqlite::params![id, tag],
@@ -648,13 +811,29 @@ pub async fn update_post(
         let old_urls: std::collections::HashSet<String> =
             extract_urls(&old_content).into_iter().collect();
         let new_urls: std::collections::HashSet<String> =
-            extract_urls(&body.content).into_iter().collect();
+            extract_urls(&content).into_iter().collect();
         old_urls != new_urls
     };
 
+    // Delete the files of removed images now their rows are gone — no dangling
+    // files, and the rows never reference a missing file mid-request.
+    for filename in removed_files {
+        let _ = std::fs::remove_file(format!("uploads/images/{}", filename));
+    }
+
+    // Kick off background AVIF conversion for any newly uploaded images.
+    for (img_id, filename) in to_convert {
+        link_preview::spawn_avif_switch(
+            db.clone(),
+            "images",
+            filename,
+            link_preview::AvifSwitch::PostImage(img_id),
+        );
+    }
+
     // Re-resolve + attach link previews only when the links actually changed.
     if links_changed {
-        attach_link_previews(&db, &id, &body.content).await;
+        attach_link_previews(&db, &id, &content).await;
     }
 
     let conn = db.conn();

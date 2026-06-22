@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Post, updatePost, deletePost, getPost } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { useTz } from "@/lib/tz";
@@ -21,13 +21,21 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { PostContent } from "./post-content";
 import { ImageGallery } from "./image-gallery";
+import { ImageEditGrid } from "./image-edit-grid";
 import { LinkPreviewCard } from "./link-preview-card";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
-import { Reply, Pencil, Trash2, MoreHorizontal, Link2, Link2Off } from "lucide-react";
+import { Reply, Pencil, Trash2, MoreHorizontal, Link2, Link2Off, ImagePlus } from "lucide-react";
 
 /** The fields shown for the parent post in the edit dialog's echo-link control. */
 type ParentSummary = Pick<NonNullable<Post["parent_post"]>, "username" | "content">;
+
+/** An image tile in the edit dialog: one the post already has (kept unless
+ *  removed) or a newly-picked file to upload. `preview` is the gallery `<img>`
+ *  src — a remote URL for existing images, a data URL for new ones. */
+type EditImage =
+  | { kind: "existing"; id: string; preview: string }
+  | { kind: "new"; id: string; file: File; preview: string };
 
 /** Pull a post id out of a pasted post link, echo link, or raw id. */
 function parsePostId(input: string): string | null {
@@ -47,19 +55,17 @@ function parsePostId(input: string): string | null {
 
 function TimeAgo({ date }: { date: string }) {
   const tz = useTz();
-  const [, setTick] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     const then = new Date(date.replace(" ", "T") + "Z").getTime();
     let timer: ReturnType<typeof setTimeout>;
     const schedule = () => {
+      setNow(Date.now());
       const age = Date.now() - then;
       if (age >= 12 * 60 * 60 * 1000) return;
       const next = age < 60_000 ? 1000 : 60_000 - (age % 60_000);
-      timer = setTimeout(() => {
-        setTick((t) => t + 1);
-        schedule();
-      }, next);
+      timer = setTimeout(schedule, next);
     };
     schedule();
     return () => clearTimeout(timer);
@@ -67,7 +73,7 @@ function TimeAgo({ date }: { date: string }) {
 
   return (
     <time dateTime={date} data-ts={date} suppressHydrationWarning>
-      {formatTimestamp(date, tz, Date.now())}
+      {formatTimestamp(date, tz, now)}
     </time>
   );
 }
@@ -118,6 +124,8 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
+  const [editImages, setEditImages] = useState<EditImage[]>([]);
+  const editFileRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   // Echo link being edited: the parent post id, plus a summary for display.
   // Both are populated by openEdit when the dialog opens.
@@ -128,6 +136,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
 
   const openEdit = () => {
     setEditContent(post.content);
+    setEditImages(post.images.map((img) => ({ kind: "existing", id: img.id, preview: img.url })));
     setEditParentId(post.parent_post_id);
     setParentSummary(
       post.parent_post
@@ -166,12 +175,63 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
     setParentSummary(null);
   };
 
+  const handleEditFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files || []);
+    selected.forEach((f) => {
+      const id = crypto.randomUUID();
+      setEditImages((prev) => [...prev, { kind: "new", id, file: f, preview: "" }]);
+      const reader = new FileReader();
+      reader.onload = () =>
+        setEditImages((prev) =>
+          prev.map((img) => (img.id === id ? { ...img, preview: reader.result as string } : img)),
+        );
+      reader.readAsDataURL(f);
+    });
+    e.target.value = "";
+  };
+
+  const removeEditImage = (index: number) => {
+    setEditImages((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const moveEditImage = (from: number, to: number) => {
+    if (from === to) return;
+    setEditImages((prev) => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  };
+
   const handleEdit = async () => {
+    if (!editContent.trim() && editImages.length === 0) {
+      toast.error("Content or an image is required");
+      return;
+    }
     setSaving(true);
     try {
-      // Only send the echo link when it actually changed; `null` unlinks.
+      const fd = new FormData();
+      fd.append("content", editContent);
+      // Only send the echo link when it actually changed; an empty string unlinks.
       const parentChange = editParentId !== post.parent_post_id ? editParentId : undefined;
-      await updatePost(post.id, editContent, parentChange);
+      if (parentChange !== undefined) fd.append("parent_post_id", parentChange ?? "");
+      // The final image order: existing images keep their id, new files are
+      // appended and referenced by their upload index. Existing images absent
+      // from this list are deleted server-side.
+      const order: string[] = [];
+      let uploadIndex = 0;
+      for (const img of editImages) {
+        if (img.kind === "existing") {
+          order.push(img.id);
+        } else {
+          fd.append("images", img.file);
+          order.push(`new:${uploadIndex}`);
+          uploadIndex++;
+        }
+      }
+      fd.append("image_order", JSON.stringify(order));
+      await updatePost(post.id, fd);
       toast.success("Post updated");
       setEditOpen(false);
       onUpdate?.();
@@ -375,6 +435,36 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
                   className="font-content leading-relaxed placeholder:font-sans"
                 />
 
+                {/* Image controls: reorder/remove existing or newly-added
+                    images, and add more. */}
+                <div className="flex flex-col gap-2">
+                  <ImageEditGrid
+                    images={editImages}
+                    onReorder={moveEditImage}
+                    onRemove={removeEditImage}
+                  />
+                  <div>
+                    <input
+                      ref={editFileRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="hidden"
+                      onChange={handleEditFiles}
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={() => editFileRef.current?.click()}
+                      className="h-8 gap-1.5 text-muted-foreground hover:text-foreground"
+                    >
+                      <ImagePlus className="size-4" />
+                      Add image
+                    </Button>
+                  </div>
+                </div>
+
                 {/* Echo link controls: make this post an echo of another, or
                     unlink it into an independent post. */}
                 <div className="flex flex-col gap-2">
@@ -430,7 +520,10 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
 
                 <div className="flex justify-end gap-2">
                   <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-                  <Button onClick={handleEdit} disabled={saving}>
+                  <Button
+                    onClick={handleEdit}
+                    disabled={saving || (!editContent.trim() && editImages.length === 0)}
+                  >
                     {saving ? "Saving..." : "Save"}
                   </Button>
                 </div>

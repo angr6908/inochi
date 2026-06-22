@@ -5,9 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent } from "@/components/ui/card";
 import { EmojiPickerButton } from "./emoji-picker-button";
+import { ImageEditGrid } from "./image-edit-grid";
 import { createPost } from "@/lib/api";
 import { toast } from "sonner";
-import { ImagePlus, X } from "lucide-react";
+import { ImagePlus } from "lucide-react";
 
 interface PostEditorProps {
   parentPostId?: string;
@@ -24,11 +25,9 @@ interface ImageItem {
 export function PostEditor({ parentPostId, placeholder, onPostCreated }: PostEditorProps) {
   const [content, setContent] = useState("");
   const [images, setImages] = useState<ImageItem[]>([]);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const tileRefs = useRef<(HTMLDivElement | null)[]>([]);
 
   const handleFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(e.target.files || []);
@@ -58,39 +57,6 @@ export function PostEditor({ parentPostId, placeholder, onPostCreated }: PostEdi
       return next;
     });
   };
-
-  const nearestIndex = (x: number, y: number) => {
-    let best = 0;
-    let bestDist = Infinity;
-    tileRefs.current.forEach((el, idx) => {
-      if (!el) return;
-      const r = el.getBoundingClientRect();
-      const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
-      if (d < bestDist) {
-        bestDist = d;
-        best = idx;
-      }
-    });
-    return best;
-  };
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>, index: number) => {
-    if ((e.target as HTMLElement).closest("button")) return;
-    e.preventDefault();
-    e.currentTarget.setPointerCapture(e.pointerId);
-    setDragIndex(index);
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (dragIndex === null) return;
-    const target = nearestIndex(e.clientX, e.clientY);
-    if (target !== dragIndex) {
-      moveImage(dragIndex, target);
-      setDragIndex(target);
-    }
-  };
-
-  const endDrag = () => setDragIndex(null);
 
   const autoGrow = () => {
     const ta = textareaRef.current;
@@ -149,45 +115,7 @@ export function PostEditor({ parentPostId, placeholder, onPostCreated }: PostEdi
           rows={2}
           className="min-h-[60px] resize-none rounded-none border-0 bg-transparent px-0.5 py-0 font-content text-base leading-relaxed shadow-none placeholder:font-sans focus-visible:ring-0 md:text-base"
         />
-        {images.length > 0 && (
-          <div className="flex flex-wrap gap-2">
-            {images.map((img, i) => (
-              <div
-                key={img.id}
-                ref={(el) => {
-                  tileRefs.current[i] = el;
-                }}
-                onPointerDown={(e) => handlePointerDown(e, i)}
-                onPointerMove={handlePointerMove}
-                onPointerUp={endDrag}
-                onPointerCancel={endDrag}
-                className={`group relative touch-none select-none transition-transform ${
-                  dragIndex === i ? "scale-105 cursor-grabbing opacity-60 shadow-lg" : "cursor-grab"
-                }`}
-              >
-                {img.preview ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={img.preview}
-                    alt=""
-                    draggable={false}
-                    className="h-20 w-20 rounded-lg object-cover ring-1 ring-border"
-                  />
-                ) : (
-                  <div className="h-20 w-20 animate-pulse rounded-lg bg-muted ring-1 ring-border" />
-                )}
-                <button
-                  type="button"
-                  onClick={() => removeImage(i)}
-                  aria-label="Remove image"
-                  className="absolute top-1 right-1 flex size-6 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white shadow-sm ring-1 ring-white/15 backdrop-blur-sm transition-colors hover:bg-black/75 focus-visible:bg-black/75 focus-visible:outline-none"
-                >
-                  <X className="size-3.5" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <ImageEditGrid images={images} onReorder={moveImage} onRemove={removeImage} />
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-0.5">
             <input

@@ -118,27 +118,6 @@ pub struct PreviewImage {
 }
 
 #[derive(Deserialize)]
-pub struct UpdatePostRequest {
-    pub content: String,
-    /// Optional change to the post's echo (parent) link. The three states are
-    /// distinguished so an edit that doesn't touch the relationship leaves it
-    /// alone: absent = unchanged, `null` = unlink into an independent post, a
-    /// string = make this post an echo of that post.
-    #[serde(default, deserialize_with = "deserialize_double_option")]
-    pub parent_post_id: Option<Option<String>>,
-}
-
-/// Deserialize a field as `Option<Option<T>>` so a present-but-null JSON value
-/// (`Some(None)`) stays distinct from an absent field (`None`, supplied by
-/// `#[serde(default)]`).
-fn deserialize_double_option<'de, D>(deserializer: D) -> Result<Option<Option<String>>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    Ok(Some(Option::deserialize(deserializer)?))
-}
-
-#[derive(Deserialize)]
 pub struct PostsQuery {
     pub page: Option<u32>,
     pub limit: Option<u32>,
