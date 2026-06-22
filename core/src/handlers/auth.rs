@@ -2,7 +2,7 @@ use axum::{extract::State, http::StatusCode, Json};
 use uuid::Uuid;
 
 use crate::auth::create_token;
-use crate::db::Db;
+use crate::db::{Db, DbExt};
 use crate::models::{err, ApiError, AuthRequest, AuthResponse, UserPublic};
 
 pub async fn signup(
@@ -20,18 +20,19 @@ pub async fn signup(
     let hash = bcrypt::hash(&body.password, 10)
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to hash password"))?;
 
-    let conn = db.lock().unwrap();
-    conn.execute(
-        "INSERT INTO users (id, username, password_hash) VALUES (?1, ?2, ?3)",
-        rusqlite::params![id, body.username.trim(), hash],
-    )
-    .map_err(|_| err(StatusCode::CONFLICT, "Username already taken"))?;
+    let created_at: String = {
+        let conn = db.conn();
+        conn.execute(
+            "INSERT INTO users (id, username, password_hash) VALUES (?1, ?2, ?3)",
+            rusqlite::params![id, body.username.trim(), hash],
+        )
+        .map_err(|_| err(StatusCode::CONFLICT, "Username already taken"))?;
 
-    let created_at: String = conn
-        .query_row("SELECT created_at FROM users WHERE id = ?1", [&id], |r| {
+        conn.query_row("SELECT created_at FROM users WHERE id = ?1", [&id], |r| {
             r.get(0)
         })
-        .unwrap();
+        .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load created user"))?
+    };
 
     let token = create_token(&id)
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to create token"))?;
@@ -50,12 +51,14 @@ pub async fn signin(
     State(db): State<Db>,
     Json(body): Json<AuthRequest>,
 ) -> Result<Json<AuthResponse>, ApiError> {
-    let conn = db.lock().unwrap();
-    let result: Result<(String, String, String, String), _> = conn.query_row(
-        "SELECT id, username, password_hash, created_at FROM users WHERE username = ?1",
-        [body.username.trim()],
-        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
-    );
+    let result: Result<(String, String, String, String), _> = {
+        let conn = db.conn();
+        conn.query_row(
+            "SELECT id, username, password_hash, created_at FROM users WHERE username = ?1",
+            [body.username.trim()],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )
+    };
 
     let (id, username, hash, created_at) =
         result.map_err(|_| err(StatusCode::UNAUTHORIZED, "Invalid credentials"))?;

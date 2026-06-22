@@ -1,7 +1,33 @@
 use rusqlite::Connection;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 pub type Db = Arc<Mutex<Connection>>;
+
+// A panic under the lock poisons the Mutex; the Connection survives it, so
+// recover the guard rather than letting every later lock panic too.
+pub trait DbExt {
+    fn conn(&self) -> MutexGuard<'_, Connection>;
+}
+
+impl DbExt for Db {
+    fn conn(&self) -> MutexGuard<'_, Connection> {
+        self.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+pub fn query_rows<T, P, F>(conn: &Connection, sql: &str, params: P, f: F) -> Vec<T>
+where
+    P: rusqlite::Params,
+    F: FnMut(&rusqlite::Row) -> rusqlite::Result<T>,
+{
+    let Ok(mut stmt) = conn.prepare(sql) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map(params, f) else {
+        return Vec::new();
+    };
+    rows.filter_map(|r| r.ok()).collect()
+}
 
 pub fn init_db() -> Db {
     let conn = Connection::open("inochi.db").expect("Failed to open database");

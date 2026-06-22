@@ -6,27 +6,25 @@ use axum::{
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::db::Db;
+use crate::db::{query_rows, Db, DbExt};
 use crate::models::*;
 
 pub async fn list_emojis(
     State(db): State<Db>,
 ) -> Result<Json<EmojisResponse>, ApiError> {
-    let conn = db.lock().unwrap();
-    let mut stmt = conn
-        .prepare("SELECT id, shortcode, filename FROM custom_emojis ORDER BY shortcode")
-        .unwrap();
-    let emojis: Vec<EmojiInfo> = stmt
-        .query_map([], |r| {
+    let conn = db.conn();
+    let emojis: Vec<EmojiInfo> = query_rows(
+        &conn,
+        "SELECT id, shortcode, filename FROM custom_emojis ORDER BY shortcode",
+        [],
+        |r| {
             Ok(EmojiInfo {
                 id: r.get(0)?,
                 shortcode: r.get(1)?,
                 url: format!("/uploads/emojis/{}", r.get::<_, String>(2)?),
             })
-        })
-        .unwrap()
-        .filter_map(|r| r.ok())
-        .collect();
+        },
+    );
 
     Ok(Json(EmojisResponse { emojis }))
 }
@@ -67,7 +65,7 @@ pub async fn upload_emoji(
 
     let id = Uuid::new_v4().to_string();
     {
-        let conn = db.lock().unwrap();
+        let conn = db.conn();
         conn.execute(
             "INSERT INTO custom_emojis (id, shortcode, filename, uploaded_by) VALUES (?1, ?2, ?3, ?4)",
             rusqlite::params![id, shortcode.trim(), filename, user_id],
@@ -99,7 +97,7 @@ pub async fn delete_emoji(
     State(db): State<Db>,
     Path(id): Path<String>,
 ) -> Result<Json<MessageResponse>, ApiError> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
 
     let filename: String = conn
         .query_row(
@@ -110,7 +108,7 @@ pub async fn delete_emoji(
         .map_err(|_| err(StatusCode::NOT_FOUND, "Emoji not found"))?;
 
     conn.execute("DELETE FROM custom_emojis WHERE id = ?1", [&id])
-        .unwrap();
+        .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to delete emoji"))?;
 
     let _ = std::fs::remove_file(format!("uploads/emojis/{}", filename));
 

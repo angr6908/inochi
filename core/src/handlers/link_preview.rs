@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crate::auth::AuthUser;
-use crate::db::Db;
+use crate::db::{Db, DbExt};
 use crate::models::*;
 
 const UA: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
@@ -433,7 +433,7 @@ pub(crate) fn spawn_avif_switch(db: Db, dir: &'static str, orig: String, switch:
             return;
         }
         {
-            let conn = db.lock().unwrap();
+            let conn = db.conn();
             match &switch {
                 AvifSwitch::PostImage(id) => conn.execute(
                     "UPDATE post_images SET filename = ?1 WHERE id = ?2",
@@ -826,7 +826,7 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
     if !dynamic {
         // Cache lookup (lock released before any network I/O).
         let cached: Option<(String, LinkPreviewInfo)> = {
-            let conn = db.lock().unwrap();
+            let conn = db.conn();
             conn.query_row(
                 "SELECT id, url, title, description, image_url, thumbnail, site_name, author
                  FROM link_previews WHERE url = ?1",
@@ -860,7 +860,7 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
     // so each can be background-converted to AVIF below.
     let mut extra_image_ids: Vec<String> = Vec::new();
     let existing: Option<(String, LinkPreviewInfo)> = {
-        let conn = db.lock().unwrap();
+        let conn = db.conn();
         let found = if dynamic {
             None
         } else {

@@ -56,9 +56,11 @@ export function AboutRotator() {
   const ringRef = useRef<SVGCircleElement | null>(null);
 
   useEffect(() => {
-    setActive(Math.floor(Math.random() * LINES.length));
-    setAnimated(true);
-    const raf = requestAnimationFrame(() => setReady(true));
+    const raf = requestAnimationFrame(() => {
+      setActive(Math.floor(Math.random() * LINES.length));
+      setAnimated(true);
+      setReady(true);
+    });
     const t = setInterval(
       () => setActive((n) => (n + 1) % LINES.length),
       ROTATE_MS,

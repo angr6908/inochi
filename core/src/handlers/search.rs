@@ -1,6 +1,6 @@
 use axum::{extract::{Query, State}, Json};
 
-use crate::db::Db;
+use crate::db::{Db, DbExt};
 use crate::handlers::posts::{posts_page, query_ids, thread_cte, thread_ordered_select};
 use crate::models::*;
 
@@ -24,7 +24,7 @@ pub async fn search_posts(
     let offset = (page - 1) * limit;
     let pattern = format!("%{}%", q.trim());
 
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
 
     // Posts that actually match the query. The thread CTE expands these to whole
     // threads (for context); `matches` counts just these so the UI can report

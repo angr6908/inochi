@@ -8,7 +8,7 @@ use std::sync::LazyLock;
 use uuid::Uuid;
 
 use crate::auth::AuthUser;
-use crate::db::Db;
+use crate::db::{query_rows, Db, DbExt};
 use crate::handlers::link_preview;
 use crate::models::*;
 
@@ -59,11 +59,7 @@ pub(crate) fn query_ids<P: rusqlite::Params>(
     sql: &str,
     params: P,
 ) -> Vec<String> {
-    let mut stmt = conn.prepare(sql).unwrap();
-    stmt.query_map(params, |r| r.get(0))
-        .unwrap()
-        .filter_map(|r| r.ok())
-        .collect()
+    query_rows(conn, sql, params, |r| r.get(0))
 }
 
 pub(crate) fn thread_cte(matched_sql: &str) -> String {
@@ -130,7 +126,7 @@ static RESOLVING: LazyLock<std::sync::Mutex<std::collections::HashSet<String>>> 
 struct ResolveClaim(String);
 impl Drop for ResolveClaim {
     fn drop(&mut self) {
-        RESOLVING.lock().unwrap().remove(&self.0);
+        RESOLVING.lock().unwrap_or_else(|e| e.into_inner()).remove(&self.0);
     }
 }
 
@@ -141,7 +137,7 @@ pub(crate) async fn attach_link_previews(db: &Db, post_id: &str, content: &str) 
     // Claim this post; if another task is already resolving it, leave it to them
     // rather than racing and double-inserting. The guard frees the claim on exit.
     let _claim = {
-        let mut resolving = RESOLVING.lock().unwrap();
+        let mut resolving = RESOLVING.lock().unwrap_or_else(|e| e.into_inner());
         if !resolving.insert(post_id.to_string()) {
             return;
         }
@@ -149,13 +145,13 @@ pub(crate) async fn attach_link_previews(db: &Db, post_id: &str, content: &str) 
     };
 
     {
-        let conn = db.lock().unwrap();
+        let conn = db.conn();
         conn.execute("DELETE FROM post_links WHERE post_id = ?1", [post_id])
             .ok();
     }
     for url in extract_urls(content).into_iter().take(4) {
         if let Some((preview_id, _)) = link_preview::resolve_and_cache(db, &url).await {
-            let conn = db.lock().unwrap();
+            let conn = db.conn();
             conn.execute(
                 "INSERT OR IGNORE INTO post_links (post_id, link_preview_id) VALUES (?1, ?2)",
                 rusqlite::params![post_id, preview_id],
@@ -173,7 +169,7 @@ pub(crate) async fn attach_link_previews(db: &Db, post_id: &str, content: &str) 
 /// scan stays cheap; subsequent passes pick up the remainder.
 pub async fn backfill_imported_previews(db: &Db) -> usize {
     let pending: Vec<(String, String)> = {
-        let conn = db.lock().unwrap();
+        let conn = db.conn();
         let mut stmt = match conn.prepare(
             "SELECT p.id, p.content FROM posts p
              WHERE p.content LIKE '%http%'
@@ -204,38 +200,31 @@ pub async fn backfill_imported_previews(db: &Db) -> usize {
 }
 
 fn fetch_images(db: &rusqlite::Connection, post_id: &str) -> Vec<ImageInfo> {
-    let mut stmt = db
-        .prepare("SELECT id, filename, width, height FROM post_images WHERE post_id = ?1 ORDER BY position")
-        .unwrap();
-    stmt.query_map([post_id], |r| {
-        Ok(ImageInfo {
-            id: r.get(0)?,
-            url: format!("/uploads/images/{}", r.get::<_, String>(1)?),
-            width: r.get(2)?,
-            height: r.get(3)?,
-        })
-    })
-    .unwrap()
-    .filter_map(|r| r.ok())
-    .collect()
+    query_rows(
+        db,
+        "SELECT id, filename, width, height FROM post_images WHERE post_id = ?1 ORDER BY position",
+        [post_id],
+        |r| {
+            Ok(ImageInfo {
+                id: r.get(0)?,
+                url: format!("/uploads/images/{}", r.get::<_, String>(1)?),
+                width: r.get(2)?,
+                height: r.get(3)?,
+            })
+        },
+    )
 }
 
 fn fetch_link_previews(db: &rusqlite::Connection, post_id: &str) -> Vec<LinkPreviewInfo> {
-    let mut stmt = db
-        .prepare(
-            "SELECT lp.id, lp.url, lp.title, lp.description, lp.image_url, lp.thumbnail, lp.site_name, lp.author
+    let rows: Vec<(String, LinkPreviewInfo)> = query_rows(
+        db,
+        "SELECT lp.id, lp.url, lp.title, lp.description, lp.image_url, lp.thumbnail, lp.site_name, lp.author
              FROM link_previews lp
              JOIN post_links pl ON lp.id = pl.link_preview_id
              WHERE pl.post_id = ?1",
-        )
-        .unwrap();
-    let rows: Vec<(String, LinkPreviewInfo)> = stmt
-        .query_map([post_id], |r| {
-            Ok((r.get::<_, String>(0)?, link_preview::preview_from_row(r, 1)?))
-        })
-        .unwrap()
-        .filter_map(|r| r.ok())
-        .collect();
+        [post_id],
+        |r| Ok((r.get::<_, String>(0)?, link_preview::preview_from_row(r, 1)?)),
+    );
     rows.into_iter()
         .map(|(id, mut info)| {
             link_preview::attach_images(db, &id, &mut info);
@@ -311,14 +300,7 @@ pub fn build_post(db: &rusqlite::Connection, post_id: &str) -> Option<PostRespon
     let images = fetch_images(db, &id);
 
     // Tags
-    let mut stmt = db
-        .prepare("SELECT tag FROM post_tags WHERE post_id = ?1")
-        .unwrap();
-    let tags: Vec<String> = stmt
-        .query_map([&id], |r| r.get(0))
-        .unwrap()
-        .filter_map(|r| r.ok())
-        .collect();
+    let tags: Vec<String> = query_ids(db, "SELECT tag FROM post_tags WHERE post_id = ?1", [&id]);
 
     // Link previews
     let link_previews = fetch_link_previews(db, &id);
@@ -404,7 +386,7 @@ pub async fn list_posts(
     let limit = query.limit.unwrap_or(20).min(100);
     let offset = (page - 1) * limit;
 
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
 
     // An empty `params` slice (no tag filter) is handled by `params_from_iter`
     // just like a non-empty one, so both queries take the same path.
@@ -436,6 +418,14 @@ pub async fn list_posts(
     let post_ids = query_ids(&conn, &list_sql, rusqlite::params_from_iter(&params));
 
     Ok(Json(posts_page(&conn, &post_ids, total, page, limit)))
+}
+
+struct SavedImage {
+    filename: String,
+    original_name: String,
+    convert: bool,
+    width: Option<i64>,
+    height: Option<i64>,
 }
 
 pub async fn create_post(
@@ -480,7 +470,7 @@ pub async fn create_post(
 
     // Save each image in its original format (fast); AVIF conversion happens in
     // the background afterwards.
-    let mut saved: Vec<(String, String, bool, Option<i64>, Option<i64>)> = Vec::new(); // (filename, original_name, convert, width, height)
+    let mut saved: Vec<SavedImage> = Vec::new();
     for (original_name, data) in images {
         let (width, height) = imagesize::blob_size(&data)
             .map(|s| (s.width as i64, s.height as i64))
@@ -489,7 +479,13 @@ pub async fn create_post(
         let (filename, convert) = link_preview::save_original("images", &original_name, &data)
             .await
             .ok_or_else(|| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to save image"))?;
-        saved.push((filename, original_name, convert, width, height));
+        saved.push(SavedImage {
+            filename,
+            original_name,
+            convert,
+            width,
+            height,
+        });
     }
 
     let tags = extract_tags(&content);
@@ -498,7 +494,7 @@ pub async fn create_post(
     // Images needing background AVIF conversion: (image_id, filename).
     let mut to_convert: Vec<(String, String)> = Vec::new();
     {
-        let conn = db.lock().unwrap();
+        let conn = db.conn();
         conn.execute(
             "INSERT INTO posts (id, user_id, parent_post_id, content, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![post_id, user_id, parent_post_id, content.trim(), now, now],
@@ -511,15 +507,15 @@ pub async fn create_post(
         })?;
 
         // Save images to db
-        for (i, (filename, original_name, convert, width, height)) in saved.iter().enumerate() {
+        for (i, img) in saved.iter().enumerate() {
             let img_id = Uuid::new_v4().to_string();
             conn.execute(
                 "INSERT INTO post_images (id, post_id, filename, original_name, position, width, height) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                rusqlite::params![img_id, post_id, filename, original_name, i as i32, width, height],
+                rusqlite::params![img_id, post_id, img.filename, img.original_name, i as i32, img.width, img.height],
             )
             .ok();
-            if *convert {
-                to_convert.push((img_id, filename.clone()));
+            if img.convert {
+                to_convert.push((img_id, img.filename.clone()));
             }
         }
 
@@ -545,8 +541,9 @@ pub async fn create_post(
     // Resolve + attach link previews (network I/O — no DB lock held).
     attach_link_previews(&db, &post_id, &content).await;
 
-    let conn = db.lock().unwrap();
-    let post = build_post(&conn, &post_id).unwrap();
+    let conn = db.conn();
+    let post = build_post(&conn, &post_id)
+        .ok_or_else(|| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load created post"))?;
     Ok(Json(serde_json::json!({ "post": post })))
 }
 
@@ -568,7 +565,7 @@ pub async fn get_post(
     State(db): State<Db>,
     Path(id): Path<String>,
 ) -> Result<Json<PostDetailResponse>, ApiError> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
     let post = build_post(&conn, &id)
         .ok_or_else(|| err(StatusCode::NOT_FOUND, "Post not found"))?;
 
@@ -592,7 +589,7 @@ pub async fn update_post(
     // Editing tags — or any other text while the links stay the same — leaves
     // the existing previews, and their thumbnails, untouched.
     let links_changed = {
-        let conn = db.lock().unwrap();
+        let conn = db.conn();
 
         // Ownership check also yields the pre-edit content for the link diff.
         let old_content = check_post_owner(&conn, &id, &user_id)?;
@@ -635,7 +632,7 @@ pub async fn update_post(
                 rusqlite::params![body.content.trim(), now, id],
             ),
         }
-        .unwrap();
+        .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to update post"))?;
 
         // Re-extract tags
         conn.execute("DELETE FROM post_tags WHERE post_id = ?1", [&id])
@@ -660,8 +657,9 @@ pub async fn update_post(
         attach_link_previews(&db, &id, &body.content).await;
     }
 
-    let conn = db.lock().unwrap();
-    let post = build_post(&conn, &id).unwrap();
+    let conn = db.conn();
+    let post = build_post(&conn, &id)
+        .ok_or_else(|| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load updated post"))?;
     Ok(Json(serde_json::json!({ "post": post })))
 }
 
@@ -670,7 +668,7 @@ pub async fn delete_post(
     State(db): State<Db>,
     Path(id): Path<String>,
 ) -> Result<Json<MessageResponse>, ApiError> {
-    let conn = db.lock().unwrap();
+    let conn = db.conn();
 
     check_post_owner(&conn, &id, &user_id)?;
 
@@ -684,7 +682,7 @@ pub async fn delete_post(
 
     // Deleting the post cascades its post_links/post_images/post_tags.
     conn.execute("DELETE FROM posts WHERE id = ?1", [&id])
-        .unwrap();
+        .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to delete post"))?;
 
     for f in images {
         let _ = std::fs::remove_file(format!("uploads/images/{}", f));
