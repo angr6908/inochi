@@ -9,7 +9,9 @@ tokio = { version = "1.52", features = ["full"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
-jsonwebtoken = { version = "10.4.0", features = ["rust_crypto"] }
+hmac = "0.12.1"
+sha2 = "0.10.9"
+base64 = "0.22.1"
 bcrypt = "0.19.2"
 uuid = { version = "1.23.3", features = ["v4"] }
 chrono = { version = "0.4.45", features = ["serde"] }
