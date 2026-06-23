@@ -47,7 +47,7 @@ function GalleryImage({
       alt=""
       loading="eager"
       fetchPriority={priority ? "high" : "low"}
-      decoding="sync"
+      decoding={priority ? "sync" : "async"}
       style={style}
       onClick={onClick}
       onError={() => {
