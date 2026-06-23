@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 // Geist (official npm package, via next/font) — UI chrome. Sets --font-geist-sans.
 import { GeistSans } from "geist/font/sans";
 // Roboto + Noto Sans JP via next/font/google (self-hosted at build, like Geist).
@@ -26,6 +26,15 @@ const notoSansJP = Noto_Sans_JP({
   variable: "--font-noto-sans-jp",
   display: "swap",
 });
+
+// maximumScale 1 stops iOS Safari from zooming in when a sub-16px input gains
+// focus (e.g. the search box), without bumping input font sizes. Trade-off:
+// pinch-to-zoom is disabled site-wide.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 1,
+};
 
 export function generateMetadata(): Metadata {
   const origin = resolveOrigin({});

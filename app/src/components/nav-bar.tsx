@@ -33,10 +33,20 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   // Scroll position captured when the mobile search opens, so we can restore it
-  // on close. Focusing the search input (autoFocus) and the soft keyboard nudge
-  // the document's scroll by a few px; if that residual offset isn't undone it
-  // can cross the nav hairline's threshold, flipping the hairline on/off.
+  // on close. The soft keyboard can still nudge the document's scroll by a few
+  // px; if that residual offset isn't undone it can cross the nav hairline's
+  // threshold, flipping the hairline on/off.
   const scrollBeforeSearch = useRef(0);
+  const searchFormRef = useRef<HTMLFormElement>(null);
+
+  // Focus the search field when it opens, with `preventScroll` so iOS Safari
+  // doesn't scroll the page to "reveal" it. The field sits in a position:fixed
+  // header, so it's already visible, but iOS's focus scroll-into-view
+  // miscalculates a fixed element's position and shoves the post content. Done
+  // here (not via autoFocus) because autoFocus can't pass preventScroll.
+  useEffect(() => {
+    if (searchOpen) searchFormRef.current?.querySelector("input")?.focus({ preventScroll: true });
+  }, [searchOpen]);
 
   const openSearch = () => {
     scrollBeforeSearch.current = window.scrollY;
@@ -91,12 +101,17 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-background">
+    <>
+    {/* `fixed` (not `sticky`) keeps the nav out of the scrolling content's
+        flow, and translateZ pins it to its own compositing layer. Together
+        they mean a route change's reflow under the nav can never repaint or
+        blank it — the iOS Safari flicker that `position: sticky` allowed. The
+        spacer below reserves its height in normal flow. */}
+    <header className="fixed inset-x-0 top-0 z-50 bg-background [transform:translateZ(0)]">
       <div className="mx-auto flex h-14 max-w-[600px] items-center gap-3 px-4 sm:gap-4 sm:px-0">
         {searchOpen ? (
-          <form onSubmit={handleSearch} className="flex flex-1 items-center gap-2">
+          <form ref={searchFormRef} onSubmit={handleSearch} className="flex flex-1 items-center gap-2">
             <Input
-              autoFocus
               placeholder="Search posts..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -182,5 +197,9 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
         />
       )}
     </header>
+    {/* Reserves the fixed nav's height (h-14) in normal flow so content starts
+        below it, matching the space the old sticky header occupied. */}
+    <div aria-hidden className="h-14" />
+    </>
   );
 }

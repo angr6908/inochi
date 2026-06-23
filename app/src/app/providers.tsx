@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { AuthProvider } from "@/lib/auth-context";
 import { TzProvider } from "@/lib/tz";
@@ -21,6 +21,15 @@ export function Providers({ children, initialAuthed, tz }: { children: React.Rea
   // whether you scroll, resize, or restore.
   const [stuck, setStuck] = useState(false);
   const sentinelRef = useRef<HTMLDivElement>(null);
+  const rafRef = useRef(0);
+
+  // Read the sentinel and flip the hairline. Shared by the scroll listener and
+  // the navigation effect (which re-measures once the new page is pinned to top).
+  const measure = useCallback(() => {
+    rafRef.current = 0;
+    const el = sentinelRef.current;
+    if (el) setStuck(el.getBoundingClientRect().top <= NAV_HEIGHT);
+  }, []);
 
   // Navigation scrolls back to the top, so the hairline must start hidden on
   // each new page. Reset synchronously when the path changes (before paint), so
@@ -40,20 +49,37 @@ export function Providers({ children, initialAuthed, tz }: { children: React.Rea
   // resets its own scroll) and post pages (scroll to the hashed reply) manage
   // their own position and are excluded.
   useLayoutEffect(() => {
+    // Drop any hairline measure still queued from the previous page's scroll: it
+    // would apply that page's (scrolled) position to the new page and flash the
+    // line on for a frame before the new content settles at the top.
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = 0;
+    }
     if (pathname === "/" || pathname.startsWith("/post/")) return;
     scrollToTop();
-  }, [pathname]);
+    measure();
+  }, [pathname, measure]);
 
+  // Toggle the hairline once the content sentinel passes under the nav's bottom
+  // edge. A passive, rAF-coalesced scroll listener rather than an
+  // IntersectionObserver: on mobile, IO callbacks are batched/deferred during
+  // scrolling, so the hairline visibly lagged — it disappeared a beat after you
+  // scrolled back to the top. Reading the sentinel's position on each scroll
+  // frame tracks the crossing immediately.
   useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => setStuck(!entry.isIntersecting),
-      { rootMargin: `-${NAV_HEIGHT}px 0px 0px 0px`, threshold: 0 },
-    );
-    obs.observe(el);
-    return () => obs.disconnect();
-  }, []);
+    const onScroll = () => {
+      if (!rafRef.current) rafRef.current = requestAnimationFrame(measure);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("resize", onScroll);
+    measure();
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, [measure]);
 
   return (
     <AuthProvider initialAuthed={initialAuthed}>
