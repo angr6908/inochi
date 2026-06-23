@@ -365,7 +365,6 @@ function BrandMark({ icon, className }: { icon: BrandIcon; className?: string })
 
 export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; priority?: boolean }) {
   const [playing, setPlaying] = useState(false);
-  const [thumbFit, setThumbFit] = useState<"cover" | "contain" | null>(null);
   const image = preview.thumbnail ?? preview.image_url;
   const visible = !!(preview.title || preview.description || preview.author);
 
@@ -375,13 +374,6 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
   const site = preview.site_name ?? host;
   const brand = brandIconFor(host);
   const embed = getEmbed(preview.url);
-  const isYoutube = embed?.provider === "youtube";
-
-  const measureThumb = (el: HTMLImageElement | null) => {
-    if (!el || !el.complete || !el.naturalHeight) return;
-    const ratio = el.naturalWidth / el.naturalHeight;
-    setThumbFit(isYoutube && ratio > 1.25 && ratio < 1.45 ? "cover" : "contain");
-  };
 
   // Served URLs for a multi-photo preview (e.g. a tweet with several photos),
   // in order. Empty for the common single-image preview.
@@ -444,14 +436,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
               loading={priority ? "eager" : "lazy"}
               fetchPriority={priority ? "high" : undefined}
               decoding="sync"
-              ref={measureThumb}
-              onLoad={(e) => measureThumb(e.currentTarget)}
-              className={cn(
-                "h-full w-full",
-                (thumbFit ?? (isYoutube ? "cover" : "contain")) === "cover"
-                  ? "object-cover"
-                  : "object-contain",
-              )}
+              className="h-full w-full object-contain"
             />
           ) : (
             <div className="h-full w-full bg-muted" />
