@@ -45,8 +45,8 @@ function GalleryImage({
     <img
       src={src}
       alt=""
-      loading={priority ? "eager" : "lazy"}
-      fetchPriority={priority ? "high" : undefined}
+      loading="eager"
+      fetchPriority={priority ? "high" : "low"}
       decoding="sync"
       style={style}
       onClick={onClick}
