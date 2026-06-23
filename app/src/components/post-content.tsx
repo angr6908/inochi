@@ -82,14 +82,17 @@ export const PostContent = memo(function PostContent({ content, priority }: { co
     };
 
     return content
+      .replace(/\r\n?/g, "\n")
       .split(/\n{2,}/)
       .filter((para) => para !== "")
       .map((para, pi) => {
         const nodes: ReactNode[] = [];
-        para.split("\n").forEach((line, li) => {
-          if (li > 0) nodes.push(<br key={key++} />);
-          renderLine(line, nodes);
-        });
+        // Keep newlines in the text and let `whitespace-pre-wrap` (on the <p>)
+        // render the line breaks. Don't also push <br>: handling the break twice
+        // made server-rendered HTML double-space (pre-wrap renders the source
+        // newline beside the <br>), so SSR'd posts had larger line spacing than
+        // client-rendered ones.
+        renderLine(para, nodes);
         return (
           <p key={pi} className="mb-2 whitespace-pre-wrap break-words last:mb-0 leading-relaxed">
             {nodes}
