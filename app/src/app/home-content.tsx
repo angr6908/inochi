@@ -62,6 +62,7 @@ function prefetchNeighbors(page: number, tag: string | undefined, pages: number)
       .then((r) => {
         pageCache.set(cacheKey(tag, r.page), { posts: r.posts, pages: r.pages });
         preloadPostFonts(r.posts);
+        preloadImages(pageImageUrls(r.posts));
       })
       .catch(() => {});
   }
@@ -100,16 +101,9 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
 
   useEffect(() => {
     if (posts.length === 0) return;
-    const run = () => {
-      preloadPostFonts(posts);
-      for (const p of [page + 1, page - 1]) {
-        const neighbor = pageCache.get(cacheKey(activeTag, p));
-        if (neighbor) {
-          preloadPostFonts(neighbor.posts);
-          preloadImages(pageImageUrls(neighbor.posts));
-        }
-      }
-    };
+    // Neighbor media is preloaded in prefetchNeighbors when its data lands; here
+    // we only warm the current page's fonts.
+    const run = () => preloadPostFonts(posts);
     const w = window as typeof window & {
       requestIdleCallback?: (cb: () => void) => number;
       cancelIdleCallback?: (id: number) => void;
@@ -120,7 +114,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     }
     const t = setTimeout(run, 300);
     return () => clearTimeout(t);
-  }, [posts, page, activeTag]);
+  }, [posts]);
 
   const load = useCallback(async (p = 1, tag?: string) => {
     const myReq = ++reqRef.current;

@@ -34,6 +34,7 @@ function prefetchNeighbors(q: string, page: number, pages: number) {
       .then((r) => {
         pageCache.set(cacheKey(q, r.page), { posts: r.posts, pages: r.pages, matches: r.matches ?? r.total });
         preloadPostFonts(r.posts);
+        preloadImages(pageImageUrls(r.posts));
       })
       .catch(() => {});
   }
@@ -105,17 +106,11 @@ export function SearchContent({ initialQ, initial }: { initialQ: string; initial
 
   useEffect(() => {
     if (posts.length === 0) return;
+    // Neighbor media is preloaded in prefetchNeighbors when its data lands; here
+    // we only warm the current page's fonts and images.
     const run = () => {
       preloadPostFonts(posts);
-      preloadImages(pageImageUrls(posts), () => {
-        for (const p of [page + 1, page - 1]) {
-          const neighbor = pageCache.get(cacheKey(q.trim(), p));
-          if (neighbor) {
-            preloadPostFonts(neighbor.posts);
-            preloadImages(pageImageUrls(neighbor.posts));
-          }
-        }
-      });
+      preloadImages(pageImageUrls(posts));
     };
     const w = window as typeof window & {
       requestIdleCallback?: (cb: () => void) => number;
@@ -127,7 +122,7 @@ export function SearchContent({ initialQ, initial }: { initialQ: string; initial
     }
     const t = setTimeout(run, 300);
     return () => clearTimeout(t);
-  }, [posts, page, q]);
+  }, [posts]);
 
   return (
     <div className="space-y-4">
