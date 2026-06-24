@@ -323,17 +323,57 @@ async fn download_best(client: &reqwest::Client, candidates: &[String]) -> Optio
     None
 }
 
+/// If `src` is a roughly 4:3 image, return the centered 16:9 crop rectangle as
+/// `(left, top, width, height)`; otherwise `None`. YouTube's fallback
+/// thumbnails (hq/sd `default.jpg`) are a 16:9 frame letterboxed into 4:3, so
+/// trimming the top/bottom bars restores the real frame.
+fn crop_16_9_rect(src: &str) -> Option<(u32, u32, u32, u32)> {
+    let dim = imagesize::size(src).ok()?;
+    let (w, h) = (dim.width as u32, dim.height as u32);
+    // ~4:3 (1.333). Leave anything already 16:9 (or wider/taller) untouched.
+    let ratio = w as f64 / h as f64;
+    if !(1.2..=1.4).contains(&ratio) {
+        return None;
+    }
+    let target_h = (w as f64 * 9.0 / 16.0).round() as u32;
+    if target_h == 0 || target_h >= h {
+        return None;
+    }
+    Some((0, (h - target_h) / 2, w, target_h))
+}
+
 /// Encode an on-disk image to AVIF (`avifenc -s 0 -d 10`, slowest/highest
 /// quality). `avifenc` reads JPEG/PNG directly; other formats (WebP, …) are
-/// decoded to PNG with `vips` first. Returns `None` if a step fails.
-async fn avif_encode_file(src: &str) -> Option<Vec<u8>> {
+/// decoded to PNG with `vips` first. When `crop_16_9` is set, a roughly-4:3
+/// source is center-cropped to 16:9 first (YouTube letterboxed thumbnails).
+/// Returns `None` if a step fails.
+async fn avif_encode_file(src: &str, crop_16_9: bool) -> Option<Vec<u8>> {
     let ext = src.rsplit('.').next().unwrap_or("").to_lowercase();
     let stem = Uuid::new_v4();
     let tmp = std::env::temp_dir();
     let png = tmp.join(format!("inochi-{stem}.png"));
     let out = tmp.join(format!("inochi-{stem}.avif"));
 
-    let avif_in: std::path::PathBuf = if matches!(ext.as_str(), "jpg" | "jpeg" | "png") {
+    let crop = crop_16_9.then(|| crop_16_9_rect(src)).flatten();
+
+    let avif_in: std::path::PathBuf = if let Some((left, top, w, h)) = crop {
+        // `vips crop` decodes too, so this also covers non-JPEG/PNG inputs.
+        let cropped = tokio::process::Command::new("vips")
+            .arg("crop")
+            .arg(src)
+            .arg(&png)
+            .args([left, top, w, h].map(|n| n.to_string()))
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !cropped {
+            return None;
+        }
+        png.clone()
+    } else if matches!(ext.as_str(), "jpg" | "jpeg" | "png") {
         std::path::PathBuf::from(src)
     } else {
         let decoded = tokio::process::Command::new("vips")
@@ -413,13 +453,25 @@ static AVIF_ENCODE_LOCK: tokio::sync::Semaphore = tokio::sync::Semaphore::const_
 /// Encodes run serially (see `AVIF_ENCODE_LOCK`). No-op if encoding fails — the
 /// original keeps being served.
 pub(crate) fn spawn_avif_switch(db: Db, dir: &'static str, orig: String, switch: AvifSwitch) {
+    spawn_avif_switch_impl(db, dir, orig, switch, false);
+}
+
+/// Like [`spawn_avif_switch`], but center-crops a roughly-4:3 source to 16:9
+/// before encoding when `crop_16_9` is set (YouTube letterboxed thumbnails).
+fn spawn_avif_switch_impl(
+    db: Db,
+    dir: &'static str,
+    orig: String,
+    switch: AvifSwitch,
+    crop_16_9: bool,
+) {
     tokio::spawn(async move {
         let src = format!("uploads/{dir}/{orig}");
         // Hold the lock only across the CPU-heavy encode; the file write and DB
         // update below are cheap I/O and need not be serialized.
         let encoded = {
             let _permit = AVIF_ENCODE_LOCK.acquire().await;
-            avif_encode_file(&src).await
+            avif_encode_file(&src, crop_16_9).await
         };
         let Some(bytes) = encoded else {
             return;
@@ -925,11 +977,15 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
 
     // The thumbnails were saved in their original format — convert each to AVIF in
     // the background, then switch the stored reference to the `.avif` file.
+    // YouTube's fallback renditions are 16:9 video letterboxed into a 4:3 frame,
+    // so crop the bars off as part of the conversion.
+    let host = host_of(&url);
+    let is_youtube = host.contains("youtube") || host.contains("youtu.be");
     let spawn_convert = |orig: &str, switch: AvifSwitch| {
         let name = orig.rsplit('/').next().unwrap_or(orig);
         let ext = name.rsplit('.').next().unwrap_or("").to_lowercase();
         if should_convert(&ext) {
-            spawn_avif_switch(db.clone(), "previews", name.to_string(), switch);
+            spawn_avif_switch_impl(db.clone(), "previews", name.to_string(), switch, is_youtube);
         }
     };
     if let Some(thumb) = info.thumbnail.as_deref() {
