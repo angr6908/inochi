@@ -5,8 +5,10 @@ import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
-const viewerButton =
-  "flex items-center justify-center rounded-lg bg-black/40 text-white ring-1 ring-white/15 backdrop-blur-md transition-colors hover:bg-black/60 hover:ring-white/30 focus:outline-none focus-visible:outline-none cursor-pointer";
+const iconButton =
+  "absolute z-10 flex items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70 focus:outline-none focus-visible:outline-none cursor-pointer";
+
+const navButton = `${iconButton} top-1/2 -translate-y-1/2 size-7`;
 
 type GalleryImg = { id: string; url: string; width: number | null; height: number | null };
 
@@ -14,25 +16,27 @@ const MAX_SINGLE_HEIGHT = 400;
 
 function GalleryImage({
   image,
-  single,
+  mode,
   priority,
   onClick,
 }: {
   image: GalleryImg;
-  single: boolean;
+  mode: "single" | "justified";
   priority?: boolean;
   onClick?: () => void;
 }) {
   const [src, setSrc] = useState(image.url);
   const retried = useRef(false);
 
-  // Reserve the image's box so it never shifts layout while loading.
-  // A grid cell fills its column and derives height from the ratio; a single
-  // image is sized to its natural dimensions, capped to MAX_SINGLE_HEIGHT.
+  // Reserve the image's box from its known ratio so layout never shifts while
+  // loading. A "justified" image fills the width its flex column was given and
+  // derives height from the ratio — within a row every image resolves to the
+  // same height. A "single" image is sized to its natural dimensions, capped to
+  // MAX_SINGLE_HEIGHT.
   const sized = image.width != null && image.height != null;
   const style: CSSProperties | undefined = !sized
     ? undefined
-    : single
+    : mode === "single"
       ? {
           aspectRatio: `${image.width} / ${image.height}`,
           width: Math.min(image.width!, Math.round(MAX_SINGLE_HEIGHT * (image.width! / image.height!))),
@@ -58,13 +62,17 @@ function GalleryImage({
       }}
       className={cn(
         "block cursor-pointer rounded-md border bg-muted",
-        single
+        mode === "single"
           ? sized ? "mx-auto" : "mx-auto max-h-[400px] max-w-full"
           : "h-auto w-full",
       )}
     />
   );
 }
+
+// Aspect ratio used to size a justified row; falls back to square when unknown.
+const aspectRatio = (img: GalleryImg) =>
+  img.width && img.height ? img.width / img.height : 1;
 
 export function ImageGallery({ images, priority }: { images: GalleryImg[]; priority?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -90,22 +98,56 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
   const current = images[selected] ?? images[0];
   const go = (dir: number) => setSelected((s) => (s + dir + images.length) % images.length);
 
+  const openAt = (i: number) => () => {
+    setSelected(i);
+    setOpen(true);
+  };
+
+  // Lay images out in rows of two. Within a justified row each image grows in
+  // proportion to its aspect ratio (flex-basis: 0), so they all resolve to one
+  // shared height with no cropping. A lone trailing image renders capped, like
+  // a single image, rather than stretching full width.
+  const rows: GalleryImg[][] = [];
+  for (let i = 0; i < images.length; i += 2) rows.push(images.slice(i, i + 2));
+
   return (
     <>
-      <div className={`mt-2 grid gap-1 ${single ? "grid-cols-1" : "grid-cols-2"}`}>
-        {images.map((img, i) => (
-          <GalleryImage
-            key={img.id}
-            image={img}
-            single={single}
-            priority={priority}
-            onClick={() => {
-              setSelected(i);
-              setOpen(true);
-            }}
-          />
-        ))}
-      </div>
+      {single ? (
+        <div className="mt-2">
+          <GalleryImage image={images[0]} mode="single" priority={priority} onClick={openAt(0)} />
+        </div>
+      ) : (
+        <div className="mt-2 flex flex-col gap-1">
+          {rows.map((row, r) =>
+            row.length === 1 ? (
+              <GalleryImage
+                key={row[0].id}
+                image={row[0]}
+                mode="single"
+                priority={priority}
+                onClick={openAt(r * 2)}
+              />
+            ) : (
+              <div key={r} className="flex gap-1">
+                {row.map((img, c) => (
+                  <div
+                    key={img.id}
+                    className="min-w-0"
+                    style={{ flexGrow: aspectRatio(img), flexBasis: 0 }}
+                  >
+                    <GalleryImage
+                      image={img}
+                      mode="justified"
+                      priority={priority}
+                      onClick={openAt(r * 2 + c)}
+                    />
+                  </div>
+                ))}
+              </div>
+            ),
+          )}
+        </div>
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
@@ -115,7 +157,7 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
         >
           <DialogTitle className="sr-only">Image viewer</DialogTitle>
 
-          <div className="relative flex items-center justify-center">
+          <div className="relative mx-auto w-fit max-w-full justify-self-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={current.url}
@@ -128,9 +170,9 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
               type="button"
               onClick={() => setOpen(false)}
               aria-label="Close"
-              className={`${viewerButton} absolute top-2 right-2 z-10 size-9`}
+              className={`${iconButton} top-2 right-2 size-7`}
             >
-              <X className="size-[18px]" />
+              <X className="size-4" />
             </button>
 
             {many && (
@@ -139,17 +181,17 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
                   type="button"
                   onClick={() => go(-1)}
                   aria-label="Previous image"
-                  className={`${viewerButton} absolute top-1/2 left-2 z-10 size-10 -translate-y-1/2`}
+                  className={`${navButton} left-2`}
                 >
-                  <ChevronLeft className="size-5" />
+                  <ChevronLeft className="size-4" />
                 </button>
                 <button
                   type="button"
                   onClick={() => go(1)}
                   aria-label="Next image"
-                  className={`${viewerButton} absolute top-1/2 right-2 z-10 size-10 -translate-y-1/2`}
+                  className={`${navButton} right-2`}
                 >
-                  <ChevronRight className="size-5" />
+                  <ChevronRight className="size-4" />
                 </button>
               </>
             )}
