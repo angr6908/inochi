@@ -21,7 +21,7 @@ function GalleryImage({
   onClick,
 }: {
   image: GalleryImg;
-  mode: "single" | "justified";
+  mode: "single" | "justified" | "lone";
   priority?: boolean;
   onClick?: () => void;
 }) {
@@ -31,18 +31,28 @@ function GalleryImage({
   // Reserve the image's box from its known ratio so layout never shifts while
   // loading. A "justified" image fills the width its flex column was given and
   // derives height from the ratio — within a row every image resolves to the
-  // same height. A "single" image is sized to its natural dimensions, capped to
-  // MAX_SINGLE_HEIGHT.
+  // same height. A "single" image (the only image in a post) is sized to its
+  // natural dimensions, capped to MAX_SINGLE_HEIGHT. A "lone" image is the odd
+  // trailing one in a multi-image gallery (3, 5, 7…): it must not span the full
+  // row, so its width is capped to half the container (and to MAX_SINGLE_HEIGHT
+  // worth of width). All bounds are CSS-derived so the box is reserved before
+  // the image loads — no flicker on load/refresh.
   const sized = image.width != null && image.height != null;
+  const ratioWidthPx = sized ? Math.round(MAX_SINGLE_HEIGHT * (image.width! / image.height!)) : 0;
   const style: CSSProperties | undefined = !sized
     ? undefined
     : mode === "single"
       ? {
           aspectRatio: `${image.width} / ${image.height}`,
-          width: Math.min(image.width!, Math.round(MAX_SINGLE_HEIGHT * (image.width! / image.height!))),
+          width: Math.min(image.width!, ratioWidthPx),
           maxWidth: "100%",
         }
-      : { aspectRatio: `${image.width} / ${image.height}` };
+      : mode === "lone"
+        ? {
+            aspectRatio: `${image.width} / ${image.height}`,
+            width: `min(50%, ${ratioWidthPx}px)`,
+          }
+        : { aspectRatio: `${image.width} / ${image.height}` };
 
   return (
     /* eslint-disable-next-line @next/next/no-img-element */
@@ -64,7 +74,9 @@ function GalleryImage({
         "block cursor-pointer rounded-md border bg-muted",
         mode === "single"
           ? sized ? "mx-auto" : "mx-auto max-h-[400px] max-w-full"
-          : "h-auto w-full",
+          : mode === "lone"
+            ? sized ? "mr-auto" : "mr-auto max-h-[400px] max-w-[50%]"
+            : "h-auto w-full",
       )}
     />
   );
@@ -123,7 +135,7 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
               <GalleryImage
                 key={row[0].id}
                 image={row[0]}
-                mode="single"
+                mode="lone"
                 priority={priority}
                 onClick={openAt(r * 2)}
               />
