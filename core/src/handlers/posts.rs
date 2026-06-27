@@ -218,10 +218,13 @@ fn fetch_images(db: &rusqlite::Connection, post_id: &str) -> Vec<ImageInfo> {
 fn fetch_link_previews(db: &rusqlite::Connection, post_id: &str) -> Vec<LinkPreviewInfo> {
     let rows: Vec<(String, LinkPreviewInfo)> = query_rows(
         db,
-        "SELECT lp.id, lp.url, lp.title, lp.description, lp.image_url, lp.thumbnail, lp.site_name, lp.author
+        &format!(
+            "SELECT lp.id, {}
              FROM link_previews lp
              JOIN post_links pl ON lp.id = pl.link_preview_id
              WHERE pl.post_id = ?1",
+            link_preview::PREVIEW_COLS
+        ),
         [post_id],
         |r| Ok((r.get::<_, String>(0)?, link_preview::preview_from_row(r, 1)?)),
     );

@@ -67,10 +67,10 @@ fn http_client() -> &'static reqwest::Client {
     })
 }
 
-/// Map a `link_previews` row into a [`LinkPreviewInfo`], reading the seven
-/// columns `url, title, description, image_url, thumbnail, site_name, author`
-/// starting at index `base`. Used by every read site so the column list lives
-/// in one place.
+/// Map a `link_previews` row into a [`LinkPreviewInfo`], reading the nine columns
+/// `url, title, description, image_url, thumbnail, site_name, author,
+/// image_width, image_height` starting at index `base`. Used by every read site
+/// so the column list lives in one place.
 pub(crate) fn preview_from_row(
     r: &rusqlite::Row,
     base: usize,
@@ -83,7 +83,30 @@ pub(crate) fn preview_from_row(
         thumbnail: r.get(base + 4)?,
         site_name: r.get(base + 5)?,
         author: r.get(base + 6)?,
+        image_width: r.get(base + 7)?,
+        image_height: r.get(base + 8)?,
         images: Vec::new(),
+    })
+}
+
+/// Column list for a `link_previews` read, matching [`preview_from_row`]'s order
+/// (offset by `base = 1` after the leading `id`). Centralized so every SELECT
+/// stays in sync.
+pub(crate) const PREVIEW_COLS: &str =
+    "url, title, description, image_url, thumbnail, site_name, author, image_width, image_height";
+
+/// Look up a cached preview by exact URL, returning `(id, info)` with its extra
+/// images attached. `None` on a cache miss.
+fn lookup_cached(conn: &rusqlite::Connection, url: &str) -> Option<(String, LinkPreviewInfo)> {
+    conn.query_row(
+        &format!("SELECT id, {PREVIEW_COLS} FROM link_previews WHERE url = ?1"),
+        [url],
+        |r| Ok((r.get::<_, String>(0)?, preview_from_row(r, 1)?)),
+    )
+    .ok()
+    .map(|(id, mut info)| {
+        attach_images(conn, &id, &mut info);
+        (id, info)
     })
 }
 
@@ -93,7 +116,7 @@ pub(crate) fn preview_from_row(
 /// single-image preview, so the client keeps rendering the lone thumbnail.
 pub(crate) fn attach_images(conn: &rusqlite::Connection, preview_id: &str, info: &mut LinkPreviewInfo) {
     let Ok(mut stmt) = conn.prepare(
-        "SELECT image_url, thumbnail FROM link_preview_images
+        "SELECT image_url, thumbnail, image_width, image_height FROM link_preview_images
          WHERE link_preview_id = ?1 ORDER BY position",
     ) else {
         return;
@@ -103,6 +126,8 @@ pub(crate) fn attach_images(conn: &rusqlite::Connection, preview_id: &str, info:
             Ok(PreviewImage {
                 image_url: r.get(0)?,
                 thumbnail: r.get(1)?,
+                image_width: r.get(2)?,
+                image_height: r.get(3)?,
             })
         })
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
@@ -114,6 +139,8 @@ pub(crate) fn attach_images(conn: &rusqlite::Connection, preview_id: &str, info:
     images.push(PreviewImage {
         image_url: info.image_url.clone(),
         thumbnail: info.thumbnail.clone(),
+        image_width: info.image_width,
+        image_height: info.image_height,
     });
     images.extend(extras);
     info.images = images;
@@ -312,12 +339,20 @@ fn thumbnail_candidates(url: &str) -> Vec<String> {
     dedup(out)
 }
 
+/// A downloaded thumbnail: the served path plus its pixel dimensions (when they
+/// could be measured), so the card can reserve the right aspect ratio up front.
+struct Thumb {
+    path: String,
+    width: Option<i64>,
+    height: Option<i64>,
+}
+
 /// Download the best available rendition, trying candidates highest-quality
 /// first and falling back when one is missing (e.g. no `maxresdefault`).
-async fn download_best(client: &reqwest::Client, candidates: &[String]) -> Option<String> {
+async fn download_best(client: &reqwest::Client, candidates: &[String]) -> Option<Thumb> {
     for cand in candidates {
-        if let Some(path) = download_thumbnail(client, cand).await {
-            return Some(path);
+        if let Some(thumb) = download_thumbnail(client, cand).await {
+            return Some(thumb);
         }
     }
     None
@@ -530,7 +565,7 @@ fn ext_from_content_type(ct: &str) -> &'static str {
 /// Download a remote image into `uploads/previews/` in its original format and
 /// return its served path. Conversion to AVIF runs in the background once the
 /// row is stored (see `resolve_and_cache`).
-async fn download_thumbnail(client: &reqwest::Client, remote: &str) -> Option<String> {
+async fn download_thumbnail(client: &reqwest::Client, remote: &str) -> Option<Thumb> {
     let resp = client.get(remote).send().await.ok()?;
     if !resp.status().is_success() {
         return None;
@@ -545,11 +580,22 @@ async fn download_thumbnail(client: &reqwest::Client, remote: &str) -> Option<St
     if bytes.is_empty() {
         return None;
     }
+    // Measure from the bytes we just fetched. The static card renders this exact
+    // image (non-YouTube previews are never AVIF-cropped, so the later AVIF
+    // re-encode keeps these dimensions). `None` on an unreadable format — the
+    // client falls back to a fixed box.
+    let (width, height) = imagesize::blob_size(&bytes)
+        .map(|d| (Some(d.width as i64), Some(d.height as i64)))
+        .unwrap_or((None, None));
     let filename = format!("{}.{}", Uuid::new_v4(), ext);
     tokio::fs::write(format!("uploads/previews/{}", filename), &bytes)
         .await
         .ok()?;
-    Some(format!("/uploads/previews/{}", filename))
+    Some(Thumb {
+        path: format!("/uploads/previews/{}", filename),
+        width,
+        height,
+    })
 }
 
 /// Twitch's public web Client-ID (used by twitch.tv itself) for unauthenticated
@@ -562,9 +608,17 @@ enum TwitchTarget {
     Channel(String),
 }
 
-/// Classify a Twitch URL as a clip, VOD, or channel (live/offline).
+/// Classify a Twitch URL as a clip, VOD, or channel (live/offline). Returns
+/// `None` for any non-Twitch host: the channel branch below matches any bare
+/// first path segment, so without this guard a URL like `x.com/OpenAI/status/1`
+/// would be misread as the Twitch channel "OpenAI" — and since channels are
+/// treated as dynamic (cache-bypassing) by `resolve_and_cache`, every such URL
+/// would skip the cache and insert a duplicate preview row on every resolve.
 fn twitch_target(url: &str) -> Option<TwitchTarget> {
     let host = host_of(url);
+    if !host.contains("twitch.tv") {
+        return None;
+    }
     let after = url.split("://").nth(1).unwrap_or(url);
     let path = after.split_once('/').map(|(_, p)| p).unwrap_or("");
     let segs: Vec<&str> = path.split(['/', '?', '#']).filter(|s| !s.is_empty()).collect();
@@ -706,9 +760,9 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
     let host = host_of(url);
     let is_youtube = host.contains("youtube") || host.contains("youtu.be");
     let is_twitter = host == "x.com" || host.contains("twitter.com");
-    let is_twitch = host.contains("twitch.tv");
-    // Twitch serves generic OG tags to bots; clips, VODs, and channels resolve via GQL.
-    let twitch_t = if is_twitch { twitch_target(url) } else { None };
+    // Twitch serves generic OG tags to bots; clips, VODs, and channels resolve
+    // via GQL. `twitch_target` is `None` for non-Twitch hosts.
+    let twitch_t = twitch_target(url);
 
     let mut title = None;
     let mut description = None;
@@ -777,7 +831,10 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
                         description = Some(txt.to_string());
                     }
                 }
-                // Thumbnail: first photo, else a video's thumbnail, else avatar.
+                // Thumbnail: first photo, else a video's thumbnail, else the
+                // embedded link card's image (a text tweet that links out has no
+                // native media — its card image is the meaningful preview), else
+                // the author avatar as a last resort.
                 image_url = tweet
                     .pointer("/media/photos/0/url")
                     .and_then(|v| v.as_str())
@@ -786,6 +843,7 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
                             .pointer("/media/videos/0/thumbnail_url")
                             .and_then(|v| v.as_str())
                     })
+                    .or_else(|| tweet.pointer("/card/image/url").and_then(|v| v.as_str()))
                     .or_else(|| tweet.pointer("/author/avatar_url").and_then(|v| v.as_str()))
                     .map(|s| s.to_string());
                 // A multi-photo tweet shows every photo in a grid: keep photos
@@ -822,13 +880,17 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
 
     let site_name = site_name.or_else(|| Some(default_site_name(&host)));
 
-    // Download the thumbnail so it is served from this server.
-    let thumbnail = if let Some(img) = image_url.clone() {
+    // Download the thumbnail so it is served from this server, keeping its
+    // measured dimensions for the card's aspect ratio.
+    let (thumbnail, image_width, image_height) = if let Some(img) = image_url.clone() {
         let abs = resolve_url(url, &img);
         image_url = Some(abs.clone());
-        download_best(client, &thumbnail_candidates(&abs)).await
+        match download_best(client, &thumbnail_candidates(&abs)).await {
+            Some(t) => (Some(t.path), t.width, t.height),
+            None => (None, None, None),
+        }
     } else {
-        None
+        (None, None, None)
     };
 
     // Download the extra grid images. The full `images` list (image 0 followed
@@ -839,13 +901,20 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
         images.push(PreviewImage {
             image_url: image_url.clone(),
             thumbnail: thumbnail.clone(),
+            image_width,
+            image_height,
         });
         for remote in &extra_remote {
             let abs = resolve_url(url, remote);
-            let thumb = download_best(client, &thumbnail_candidates(&abs)).await;
+            let (thumb, w, h) = match download_best(client, &thumbnail_candidates(&abs)).await {
+                Some(t) => (Some(t.path), t.width, t.height),
+                None => (None, None, None),
+            };
             images.push(PreviewImage {
                 image_url: Some(abs),
                 thumbnail: thumb,
+                image_width: w,
+                image_height: h,
             });
         }
     }
@@ -858,6 +927,8 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
         thumbnail,
         site_name,
         author,
+        image_width,
+        image_height,
         images,
     }
 }
@@ -877,21 +948,10 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
 
     if !dynamic {
         // Cache lookup (lock released before any network I/O).
-        let cached: Option<(String, LinkPreviewInfo)> = {
+        let cached = {
             let conn = db.conn();
-            conn.query_row(
-                "SELECT id, url, title, description, image_url, thumbnail, site_name, author
-                 FROM link_previews WHERE url = ?1",
-                [&url],
-                |r| Ok((r.get::<_, String>(0)?, preview_from_row(r, 1)?)),
-            )
-            .ok()
-            .map(|(id, mut info)| {
-                attach_images(&conn, &id, &mut info);
-                (id, info)
-            })
+            lookup_cached(&conn, &url)
         };
-
         if let Some((id, info)) = cached {
             return Some((id, info));
         }
@@ -916,22 +976,12 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
         let found = if dynamic {
             None
         } else {
-            conn.query_row(
-                "SELECT id, url, title, description, image_url, thumbnail, site_name, author
-                 FROM link_previews WHERE url = ?1",
-                [&url],
-                |r| Ok((r.get::<_, String>(0)?, preview_from_row(r, 1)?)),
-            )
-            .ok()
-            .map(|(id, mut info)| {
-                attach_images(&conn, &id, &mut info);
-                (id, info)
-            })
+            lookup_cached(&conn, &url)
         };
         if found.is_none() {
             conn.execute(
-                "INSERT INTO link_previews (id, url, title, description, image_url, thumbnail, site_name, author)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                "INSERT INTO link_previews (id, url, title, description, image_url, thumbnail, site_name, author, image_width, image_height)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                 rusqlite::params![
                     id,
                     info.url,
@@ -940,7 +990,9 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
                     info.image_url,
                     info.thumbnail,
                     info.site_name,
-                    info.author
+                    info.author,
+                    info.image_width,
+                    info.image_height
                 ],
             )
             .ok();
@@ -950,9 +1002,17 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
             for (pos, img) in info.images.iter().enumerate().skip(1) {
                 let img_id = Uuid::new_v4().to_string();
                 conn.execute(
-                    "INSERT INTO link_preview_images (id, link_preview_id, position, image_url, thumbnail)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                    rusqlite::params![img_id, id, pos as i64, img.image_url, img.thumbnail],
+                    "INSERT INTO link_preview_images (id, link_preview_id, position, image_url, thumbnail, image_width, image_height)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                    rusqlite::params![
+                        img_id,
+                        id,
+                        pos as i64,
+                        img.image_url,
+                        img.thumbnail,
+                        img.image_width,
+                        img.image_height
+                    ],
                 )
                 .ok();
                 extra_image_ids.push(img_id);

@@ -29,6 +29,10 @@ export interface LinkPreview {
   thumbnail: string | null;
   site_name: string | null;
   author: string | null;
+  /** Pixel size of the locally-served thumbnail, used to reserve the card's
+   *  image box at the real aspect ratio before it loads. Null when unknown. */
+  image_width?: number | null;
+  image_height?: number | null;
   /** Every image in order when the preview has more than one (e.g. a tweet
    *  with several photos). Empty/absent for single-image previews. */
   images?: PreviewImage[];
@@ -37,6 +41,8 @@ export interface LinkPreview {
 export interface PreviewImage {
   image_url: string | null;
   thumbnail: string | null;
+  image_width?: number | null;
+  image_height?: number | null;
 }
 
 export interface Emoji {

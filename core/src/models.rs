@@ -101,6 +101,14 @@ pub struct LinkPreviewInfo {
     pub thumbnail: Option<String>,
     pub site_name: Option<String>,
     pub author: Option<String>,
+    /// Pixel dimensions of the locally-saved thumbnail, so the client can reserve
+    /// the card's image box at the real aspect ratio before the image loads (no
+    /// layout shift). `None` when the thumbnail download/measure failed — the
+    /// client then falls back to a fixed 16:9 box.
+    #[serde(default)]
+    pub image_width: Option<i64>,
+    #[serde(default)]
+    pub image_height: Option<i64>,
     /// Every image in the preview, in order, when there is more than one (e.g. a
     /// tweet with several photos). Image 0 mirrors `image_url`/`thumbnail`; the
     /// rest are the extras. Empty for single-image previews — the client then
@@ -115,6 +123,11 @@ pub struct PreviewImage {
     pub image_url: Option<String>,
     /// Locally-saved copy, served from this server. Preferred by the client.
     pub thumbnail: Option<String>,
+    /// Pixel dimensions of the locally-saved copy (see `LinkPreviewInfo`).
+    #[serde(default)]
+    pub image_width: Option<i64>,
+    #[serde(default)]
+    pub image_height: Option<i64>,
 }
 
 #[derive(Deserialize)]

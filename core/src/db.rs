@@ -72,14 +72,18 @@ pub fn init_db() -> Db {
             site_name TEXT,
             author TEXT,
             fetched_at TEXT NOT NULL DEFAULT (datetime('now')),
-            thumbnail TEXT
+            thumbnail TEXT,
+            image_width INTEGER,
+            image_height INTEGER
         );
         CREATE TABLE IF NOT EXISTS link_preview_images (
             id TEXT PRIMARY KEY,
             link_preview_id TEXT NOT NULL REFERENCES link_previews(id) ON DELETE CASCADE,
             position INTEGER NOT NULL,
             image_url TEXT,
-            thumbnail TEXT
+            thumbnail TEXT,
+            image_width INTEGER,
+            image_height INTEGER
         );
         CREATE TABLE IF NOT EXISTS post_links (
             post_id TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,

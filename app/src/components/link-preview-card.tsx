@@ -20,11 +20,13 @@ function PreviewThumb({
   alt,
   priority,
   className,
+  style,
 }: {
   src?: string;
   alt: string;
   priority?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
@@ -35,8 +37,23 @@ function PreviewThumb({
       fetchPriority={priority ? "high" : undefined}
       decoding="sync"
       className={className}
+      style={style}
     />
   );
+}
+
+// Aspect ratio for the single-image card, derived from the thumbnail's real
+// pixel size so the box is reserved at the right shape *before* the image loads
+// (the CSS `aspect-ratio` applies pre-load, so there's no layout shift or
+// flash). Clamped so an extreme panorama/portrait can't make a card that's a
+// thin sliver or taller than the viewport; at the clamp the image fills the box
+// with `object-cover`, exactly as platforms crop oversized previews. Returns
+// null when dimensions are unknown — the caller then keeps the fixed 16:9 box.
+const MIN_CARD_RATIO = 0.8; // not taller than 5:4
+const MAX_CARD_RATIO = 3; // not wider than 3:1
+function cardAspectRatio(w?: number | null, h?: number | null): number | null {
+  if (!w || !h || w <= 0 || h <= 0) return null;
+  return Math.min(MAX_CARD_RATIO, Math.max(MIN_CARD_RATIO, w / h));
 }
 
 function hostOf(url: string): string {
@@ -450,6 +467,12 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
       );
     }
 
+    // Reserve the image box up front via `aspect-ratio` (it applies before the
+    // resource loads) so the card never grows and shoves the content below it
+    // down once the image arrives. When the backend reported the thumbnail's
+    // real size, the box adapts to it (object-cover fills it edge-to-edge);
+    // otherwise fall back to a fixed 16:9 box with object-contain.
+    const ratio = cardAspectRatio(preview.image_width, preview.image_height);
     return (
       <a
         href={preview.url}
@@ -457,15 +480,12 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
         rel="noopener noreferrer"
         className="block overflow-hidden bg-muted"
       >
-        {/* Reserve a 16:9 box up front (via aspect-ratio, which applies before
-            the resource loads) so the card doesn't grow and shove the content
-            below it down once the image arrives. object-contain keeps off-ratio
-            images uncropped, letterboxed against the muted card. */}
         <PreviewThumb
           src={image ?? undefined}
           alt={preview.title ?? ""}
           priority={priority}
-          className="aspect-video w-full object-contain"
+          className={cn("w-full", ratio ? "object-cover" : "aspect-video object-contain")}
+          style={ratio ? { aspectRatio: String(ratio) } : undefined}
         />
       </a>
     );

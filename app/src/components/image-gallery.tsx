@@ -59,9 +59,17 @@ function GalleryImage({
     <img
       src={src}
       alt=""
-      loading="eager"
-      fetchPriority={priority ? "high" : "low"}
-      decoding={priority ? "sync" : "async"}
+      // Mirror the link-preview thumbnails, which never flicker: decode
+      // synchronously and lazy-load the off-screen ones. `decoding="async"` lets
+      // the browser paint a non-priority image blank for a frame whenever it has
+      // to re-decode (a client-side feed re-render / relayout) — that's the
+      // flicker, and the first image escaped it only because `priority` made it
+      // `sync`. `sync` forbids the blank; `lazy` stops that from decoding every
+      // off-screen photo up front, so the sync cost is paid one image at a time
+      // as it scrolls into view — exactly what the thumbnails do.
+      loading={priority ? "eager" : "lazy"}
+      fetchPriority={priority ? "high" : undefined}
+      decoding="sync"
       style={style}
       onClick={onClick}
       onError={() => {
