@@ -133,11 +133,11 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
   return (
     <>
       {single ? (
-        <div className="mt-2">
+        <div>
           <GalleryImage image={images[0]} mode="single" priority={priority} onClick={openAt(0)} />
         </div>
       ) : (
-        <div className="mt-2 flex flex-col gap-1">
+        <div className="flex flex-col gap-1">
           {rows.map((row, r) =>
             row.length === 1 ? (
               <GalleryImage

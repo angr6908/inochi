@@ -115,12 +115,7 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
   const sameAuthor = post.parent_post?.username === post.username;
   const showReference = !hideParent && !!post.parent_post;
   const hideOwnUsername = hideUsername || (showReference && sameAuthor);
-  // With no text, the empty content div collapses and the header's mb-2 (8px)
-  // collapses with the following block's mt-2 (8px) to an 8px gap. Bump the
-  // header's bottom margin to 10px in that case so the header→media gap matches
-  // the 10px text→reference / text→bottom rhythm. With text, it stays mb-2 so
-  // the header→text and text→media gaps are unaffected.
-  const hasText = post.content.trim().length > 0;
+  const hasMedia = post.images.length > 0 || post.link_previews.length > 0;
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
@@ -273,7 +268,11 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
     <Card id={post.id} className={cn("scroll-mt-20 gap-0 py-0", className)}>
       <CardContent className="p-4">
         {/* Header */}
-        <div className={cn("flex items-center gap-1.5 text-sm", hasText ? "mb-2" : "mb-2.5")}>
+        {/* 10px below the header. With no text the empty content div collapses,
+            so this collapses with the inner-card wrapper's mt-[9px]; mb-2.5 (10px)
+            wins, keeping header→card at 10px to the border (border not counted),
+            while the wrapper's 9px only governs content-text→card (border counted). */}
+        <div className="mb-2.5 flex items-center gap-1.5 text-sm">
           <span className="flex items-center gap-1.5">
             {!hideOwnUsername && (
               <>
@@ -365,56 +364,71 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
         </div>
 
         {/* Content */}
-        {/* The card's bottom padding (p-4 = 16px) is larger than the gap text
-            sits above images/link previews (mt-2 = 8px), so a text-only card's
-            bottom reads roomier than text-with-media. When the text is the last
-            block, pull it down so the gap to the card edge lands at 10px — close
-            to the text→media gap (a touch more to seat against the border/divider).
-            Scoped to :last-child so it never collapses the spacing when
-            media/reference actually follows. */}
+        {/* The card's bottom padding (p-4 = 16px) is larger than the 10px content
+            gap, so a text-only card's bottom would read roomier than the rest.
+            When the text is the last block, pull it down so the gap to the card
+            edge lands at 10px, matching every other content gap. Scoped to
+            :last-child so it never collapses the spacing when media/reference
+            actually follows. */}
         <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[6px]">
           <PostContent content={post.content} priority={priority} />
         </div>
 
-        {/* Images */}
-        <ImageGallery images={post.images} priority={priority} />
+        {/* Images, link previews and the reference card — the "cards inside the
+            card". The wrapper owns their spacing. Only the content-text→first-card
+            gap counts that card's 1px border: mt-[9px] (+ border = 10px to its
+            content). Everything else is 10px to the border edge, border not
+            counted: gap-2.5 (10px) between cards, and header→first-card when there
+            is no text (the header's mb-2.5 wins the margin collapse over this
+            mt-[9px]). The wrapper sits on the full p-4 padding, so the last card
+            is 16px off the mother card bottom; the reference card matches that
+            above itself (see its own mt below). ImageGallery renders nothing when
+            there are no images, so it adds no gap. */}
+        {(hasMedia || showReference) && (
+          <div className="mt-[9px] flex flex-col gap-2.5">
+            <ImageGallery images={post.images} priority={priority} />
 
-        {/* Link previews */}
-        {post.link_previews.map((lp, i) => (
-          <LinkPreviewCard key={i} preview={lp} priority={priority} />
-        ))}
+            {post.link_previews.map((lp, i) => (
+              <LinkPreviewCard key={i} preview={lp} priority={priority} />
+            ))}
 
-        {/* Reference card — the quoted parent post this follow-up replies to,
-            shown below the follow-up's own content and link previews. The whole
-            card is clickable via a stretched overlay link (can't wrap in <a>
-            because PostContent renders its own links). */}
-        {!hideParent && post.parent_post && (
-          <div className="relative mt-2.5 rounded-lg border border-border/60 bg-muted/40 p-3 transition-colors hover:bg-muted/70">
-            <Link
-              href={`/post/${post.parent_post.id}`}
-              aria-label={`View post by ${post.parent_post.username}`}
-              className="absolute inset-0 z-10"
-            />
-            <div className="mb-1.5 flex items-center gap-1.5 text-sm">
-              <span className="font-medium leading-none">{post.parent_post.username}</span>
-              <span aria-hidden className="size-[2px] shrink-0 bg-muted-foreground/50" />
-              <span className="text-xs leading-none text-muted-foreground">
-                <TimeAgo date={post.parent_post.created_at} />
-              </span>
-            </div>
-            <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[2px] [&_a]:relative [&_a]:z-20">
-              <PostContent content={post.parent_post.content} />
-            </div>
-            {post.parent_post.images.length > 0 && (
-              <div className="relative z-20">
-                <ImageGallery images={post.parent_post.images} />
-              </div>
-            )}
-            {post.parent_post.link_previews.length > 0 && (
-              <div className="relative z-20">
-                {post.parent_post.link_previews.map((lp, i) => (
-                  <LinkPreviewCard key={i} preview={lp} />
-                ))}
+            {/* Reference card — the quoted parent post this follow-up replies to.
+                The whole card is clickable via a stretched overlay link (can't
+                wrap in <a> because PostContent renders its own links). When media
+                sits above it, mt-[6px] (on top of the wrapper's gap-2.5 = 10px)
+                makes the gap above the reference 16px, matching its 16px gap down
+                to the mother card bottom — framing it symmetrically. With no media
+                above, it's the content-text→card gap (mt-[9px]) and this mt does
+                not apply. */}
+            {!hideParent && post.parent_post && (
+              <div className={cn("relative rounded-lg border border-border/60 bg-muted/40 p-3 transition-colors hover:bg-muted/70", hasMedia && "mt-[6px]")}>
+                <Link
+                  href={`/post/${post.parent_post.id}`}
+                  aria-label={`View post by ${post.parent_post.username}`}
+                  className="absolute inset-0 z-10"
+                />
+                <div className="mb-1.5 flex items-center gap-1.5 text-sm">
+                  <span className="font-medium leading-none">{post.parent_post.username}</span>
+                  <span aria-hidden className="size-[2px] shrink-0 bg-muted-foreground/50" />
+                  <span className="text-xs leading-none text-muted-foreground">
+                    <TimeAgo date={post.parent_post.created_at} />
+                  </span>
+                </div>
+                <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[2px] [&_a]:relative [&_a]:z-20">
+                  <PostContent content={post.parent_post.content} />
+                </div>
+                {/* Same rhythm one level deeper: content-text→first-card counts
+                    its border (mt-[9px]); cards are 10px apart (gap-2.5). z-20
+                    lifts the media above the card's stretched overlay link so it
+                    stays clickable (lightbox / preview links). */}
+                {(post.parent_post.images.length > 0 || post.parent_post.link_previews.length > 0) && (
+                  <div className="relative z-20 mt-[9px] flex flex-col gap-2.5">
+                    <ImageGallery images={post.parent_post.images} />
+                    {post.parent_post.link_previews.map((lp, i) => (
+                      <LinkPreviewCard key={i} preview={lp} />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

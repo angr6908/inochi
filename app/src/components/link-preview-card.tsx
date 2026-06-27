@@ -494,7 +494,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
   return (
     <div
       className={cn(
-        "group mt-2 overflow-hidden rounded-xl border border-border bg-card",
+        "group overflow-hidden rounded-xl border border-border bg-card",
         "transition-colors hover:bg-accent/40"
       )}
     >
