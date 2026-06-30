@@ -198,10 +198,14 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  const seeded = useRef(seed !== null);
+  // The tag the mounted content represents (`null` = nothing loaded yet). Reload
+  // whenever the URL's tag diverges from it — e.g. when Next's router cache
+  // serves a stale page payload so `key` doesn't change and this instance isn't
+  // remounted, leaving the feed on the previous tag while only the URL updated.
+  const loadedTag = useRef<string | null | undefined>(seed ? tagParam : null);
   useEffect(() => {
-    if (seeded.current) return;
-    seeded.current = true;
+    if (loadedTag.current === tagParam) return;
+    loadedTag.current = tagParam;
     load(1, tagParam);
   }, [tagParam, load]);
 
@@ -210,6 +214,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
   useEffect(() => {
     const reset = () => {
       setActiveTag(undefined);
+      loadedTag.current = undefined;
       window.history.replaceState(null, "", "/");
       load(1, undefined);
     };
