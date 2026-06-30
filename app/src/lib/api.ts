@@ -155,6 +155,15 @@ function readStoredEmojis(): Emoji[] | null {
   }
 }
 
+function persistEmojis(emojis: Emoji[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(EMOJI_STORE_KEY, JSON.stringify(emojis));
+  } catch {
+    // private mode / quota — fine to skip the cache write
+  }
+}
+
 /** Cached, de-duplicated fetch of the custom emoji list (never rejects). */
 export function loadEmojis(): Promise<Emoji[]> {
   if (emojiCache) return Promise.resolve(emojiCache);
@@ -162,13 +171,7 @@ export function loadEmojis(): Promise<Emoji[]> {
     emojiPromise = getEmojis()
       .then((r) => {
         emojiCache = r.emojis;
-        if (typeof window !== "undefined") {
-          try {
-            localStorage.setItem(EMOJI_STORE_KEY, JSON.stringify(r.emojis));
-          } catch {
-            // private mode / quota — fine to skip the cache write
-          }
-        }
+        persistEmojis(r.emojis);
         return emojiCache;
       })
       .catch(() => {
@@ -189,8 +192,18 @@ export const cachedEmojis = (): Emoji[] | null => {
   return storedEmojis;
 };
 
+/**
+ * Whether the authoritative list has been fetched from the network. The stored
+ * (localStorage) list is good for an instant first paint but may be stale, so a
+ * shortcode missing from it isn't necessarily literal text until this is true.
+ */
+export const emojisFetched = (): boolean => emojiCache != null;
+
 export function seedEmojis(emojis: Emoji[]): void {
   if (!emojiCache) emojiCache = emojis;
+  // Refresh the instant-paint cache so it reflects newly added emojis instead of
+  // a stale list captured by an earlier load.
+  persistEmojis(emojis);
 }
 
 export const uploadEmoji = (formData: FormData) =>

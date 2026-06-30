@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Emoji, loadEmojis, cachedEmojis } from "@/lib/api";
+import { Emoji, loadEmojis, cachedEmojis, emojisFetched } from "@/lib/api";
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 
 const TOKEN = /(https?:\/\/[^\s<>()\[\]{}"']+)|(#[\p{L}\p{N}_]+)|:([a-zA-Z0-9_]+):/gu;
 
 export const PostContent = memo(function PostContent({ content, priority }: { content: string; priority?: boolean }) {
   const [emojis, setEmojis] = useState<Emoji[]>(() => cachedEmojis() ?? []);
-  const [loaded, setLoaded] = useState<boolean>(() => cachedEmojis() != null);
+  const [loaded, setLoaded] = useState<boolean>(emojisFetched);
 
   useEffect(() => {
     if (loaded) return;
