@@ -61,6 +61,10 @@ pub struct PostResponse {
     pub parent_post_id: Option<String>,
     pub root_post_id: String,
     pub parent_post: Option<ParentPostSummary>,
+    /// The thread above this post, root-first up to its immediate parent. Empty
+    /// for a root post. Lets the timeline rebuild a reply's whole prior thread
+    /// when it isn't already shown on the page.
+    pub ancestors: Vec<PostResponse>,
     pub content: String,
     pub images: Vec<ImageInfo>,
     pub link_previews: Vec<LinkPreviewInfo>,

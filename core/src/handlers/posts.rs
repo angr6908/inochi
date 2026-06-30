@@ -273,6 +273,20 @@ fn find_root(db: &rusqlite::Connection, start: &str) -> String {
 }
 
 pub fn build_post(db: &rusqlite::Connection, post_id: &str) -> Option<PostResponse> {
+    build_post_inner(db, post_id, true)
+}
+
+/// Like [`build_post`] but without the ancestor chain. Used where the thread is
+/// already materialised (descendant walks) so the chain isn't rebuilt per node.
+fn build_post_basic(db: &rusqlite::Connection, post_id: &str) -> Option<PostResponse> {
+    build_post_inner(db, post_id, false)
+}
+
+fn build_post_inner(
+    db: &rusqlite::Connection,
+    post_id: &str,
+    with_ancestors: bool,
+) -> Option<PostResponse> {
     let row = db
         .query_row(
             "SELECT p.id, p.user_id, u.username, p.parent_post_id, p.content, p.created_at, p.updated_at
@@ -344,6 +358,26 @@ pub fn build_post(db: &rusqlite::Connection, post_id: &str) -> Option<PostRespon
         None
     };
 
+    // Ancestor chain (root-first up to the immediate parent), built without their
+    // own chains to keep this from recursing the whole way up per node.
+    let ancestors = if with_ancestors {
+        let mut chain: Vec<PostResponse> = Vec::new();
+        let mut cur = parent_post_id.clone();
+        while let Some(pid) = cur {
+            match build_post_basic(db, &pid) {
+                Some(p) => {
+                    cur = p.parent_post_id.clone();
+                    chain.push(p);
+                }
+                None => break,
+            }
+        }
+        chain.reverse();
+        chain
+    } else {
+        Vec::new()
+    };
+
     Some(PostResponse {
         id,
         user_id,
@@ -351,6 +385,7 @@ pub fn build_post(db: &rusqlite::Connection, post_id: &str) -> Option<PostRespon
         parent_post_id,
         root_post_id,
         parent_post,
+        ancestors,
         content,
         images,
         link_previews,
@@ -557,7 +592,7 @@ fn collect_descendants(conn: &rusqlite::Connection, parent_id: &str, out: &mut V
         [parent_id],
     );
     for cid in child_ids {
-        if let Some(p) = build_post(conn, &cid) {
+        if let Some(p) = build_post_basic(conn, &cid) {
             out.push(p);
             collect_descendants(conn, &cid, out);
         }

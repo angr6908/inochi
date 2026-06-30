@@ -53,6 +53,7 @@ export function PostFeed({ posts, onUpdate, dedupeReferences }: PostFeedProps) {
             echoInMenu
             hideParent={repliesToNext || (!!dedupeReferences && parentOnPage)}
             hideUsername={sameAuthorAsNext}
+            quoteParentOnly={i === posts.length - 1}
             onUpdate={onUpdate}
             className={cn(
               sameThreadAsNext ? "mb-0" : "mb-4",

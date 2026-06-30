@@ -102,9 +102,13 @@ interface PostCardProps {
   /** Also offer the echo action inside the actions menu (feed views). Only takes
    *  effect for logged-in viewers, who always get it there. */
   echoInMenu?: boolean;
+  /** Quote only the immediate parent rather than the whole ancestor thread — used
+   *  when the rest of the thread continues onto the next page, so a neighbor that
+   *  was merely split by pagination isn't expanded. */
+  quoteParentOnly?: boolean;
 }
 
-export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onDelete, className, priority, echoVisible = true, echoInMenu }: PostCardProps) {
+export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onDelete, className, priority, echoVisible = true, echoInMenu, quoteParentOnly }: PostCardProps) {
   const { user } = useAuth();
   const router = useRouter();
   const isOwner = user?.id === post.user_id;
@@ -113,7 +117,15 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
   const echoMenuItem = !!echoInMenu && !!user;
   const hasFollowups = post.followup_count > 0;
   const sameAuthor = post.parent_post?.username === post.username;
-  const showReference = !hideParent && !!post.parent_post;
+  // The quoted thread above this reply: the whole ancestor chain (root-first) when
+  // available, else just the immediate parent — rendered as one merged quote.
+  const quoteChain =
+    !quoteParentOnly && post.ancestors && post.ancestors.length > 0
+      ? post.ancestors
+      : post.parent_post
+        ? [post.parent_post]
+        : [];
+  const showReference = !hideParent && quoteChain.length > 0;
   const hideOwnUsername = hideUsername || (showReference && sameAuthor);
   const hasMedia = post.images.length > 0 || post.link_previews.length > 0;
   const [editOpen, setEditOpen] = useState(false);
@@ -392,43 +404,61 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
               <LinkPreviewCard key={i} preview={lp} priority={priority} />
             ))}
 
-            {/* Reference card — the quoted parent post this follow-up replies to.
-                The whole card is clickable via a stretched overlay link (can't
-                wrap in <a> because PostContent renders its own links). When media
+            {/* Reference card — the quoted thread this follow-up replies to: the
+                whole ancestor chain (root-first) merged into one quote, or just the
+                immediate parent. Each entry is clickable via a stretched overlay
+                link (can't wrap in <a> because PostContent renders its own links).
+                When media
                 sits above it, mt-[6px] (on top of the wrapper's gap-2.5 = 10px)
                 makes the gap above the reference 16px, matching its 16px gap down
                 to the mother card bottom — framing it symmetrically. With no media
                 above, it's the content-text→card gap (mt-[9px]) and this mt does
                 not apply. */}
-            {!hideParent && post.parent_post && (
-              <div className={cn("relative rounded-lg border border-border/60 bg-muted/40 p-3 transition-colors hover:bg-muted/70", hasMedia && "mt-[6px]")}>
-                <Link
-                  href={`/post/${post.parent_post.id}`}
-                  aria-label={`View post by ${post.parent_post.username}`}
-                  className="absolute inset-0 z-10"
-                />
-                <div className="mb-1.5 flex items-center gap-1.5 text-sm">
-                  <span className="font-medium leading-none">{post.parent_post.username}</span>
-                  <span aria-hidden className="size-[2px] shrink-0 bg-muted-foreground/50" />
-                  <span className="text-xs leading-none text-muted-foreground">
-                    <TimeAgo date={post.parent_post.created_at} />
-                  </span>
-                </div>
-                <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[2px] [&_a]:relative [&_a]:z-20">
-                  <PostContent content={post.parent_post.content} />
-                </div>
-                {/* Same rhythm one level deeper: content-text→first-card counts
-                    its border (mt-[9px]); cards are 10px apart (gap-2.5). z-20
-                    lifts the media above the card's stretched overlay link so it
-                    stays clickable (lightbox / preview links). */}
-                {(post.parent_post.images.length > 0 || post.parent_post.link_previews.length > 0) && (
-                  <div className="relative z-20 mt-[9px] flex flex-col gap-2.5">
-                    <ImageGallery images={post.parent_post.images} />
-                    {post.parent_post.link_previews.map((lp, i) => (
-                      <LinkPreviewCard key={i} preview={lp} />
-                    ))}
+            {showReference && (
+              <div className={cn("relative overflow-hidden rounded-lg border border-border/60 bg-muted/40", hasMedia && "mt-[6px]")}>
+                {quoteChain.map((q, qi) => (
+                  <div
+                    key={q.id}
+                    className={cn(
+                      "relative p-3 transition-colors hover:bg-muted/70",
+                      qi > 0 && "border-t border-border/60",
+                    )}
+                  >
+                    <Link
+                      href={`/post/${q.id}`}
+                      aria-label={`View post by ${q.username}`}
+                      className="absolute inset-0 z-10"
+                    />
+                    <div className="mb-1.5 flex items-center gap-1.5 text-sm">
+                      {/* Drop the repeated name when this entry shares its author
+                          with the one directly above it. */}
+                      {!(qi > 0 && quoteChain[qi - 1].username === q.username) && (
+                        <>
+                          <span className="font-medium leading-none">{q.username}</span>
+                          <span aria-hidden className="size-[2px] shrink-0 bg-muted-foreground/50" />
+                        </>
+                      )}
+                      <span className="text-xs leading-none text-muted-foreground">
+                        <TimeAgo date={q.created_at} />
+                      </span>
+                    </div>
+                    <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[2px] [&_a]:relative [&_a]:z-20">
+                      <PostContent content={q.content} />
+                    </div>
+                    {/* Same rhythm one level deeper: content-text→first-card counts
+                        its border (mt-[9px]); cards are 10px apart (gap-2.5). z-20
+                        lifts the media above the card's stretched overlay link so it
+                        stays clickable (lightbox / preview links). */}
+                    {(q.images.length > 0 || q.link_previews.length > 0) && (
+                      <div className="relative z-20 mt-[9px] flex flex-col gap-2.5">
+                        <ImageGallery images={q.images} />
+                        {q.link_previews.map((lp, i) => (
+                          <LinkPreviewCard key={i} preview={lp} />
+                        ))}
+                      </div>
+                    )}
                   </div>
-                )}
+                ))}
               </div>
             )}
           </div>

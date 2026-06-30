@@ -44,16 +44,15 @@ function PreviewThumb({
 
 // Aspect ratio for the single-image card, derived from the thumbnail's real
 // pixel size so the box is reserved at the right shape *before* the image loads
-// (the CSS `aspect-ratio` applies pre-load, so there's no layout shift or
-// flash). Clamped so an extreme panorama/portrait can't make a card that's a
-// thin sliver or taller than the viewport; at the clamp the image fills the box
-// with `object-cover`, exactly as platforms crop oversized previews. Returns
-// null when dimensions are unknown — the caller then keeps the fixed 16:9 box.
-const MIN_CARD_RATIO = 0.8; // not taller than 5:4
-const MAX_CARD_RATIO = 3; // not wider than 3:1
+// (the CSS `aspect-ratio` applies pre-load, so there's no layout shift or flash).
+// Portrait or square (width ≤ height) gets a 16:9 box — the image fits by height
+// with space left and right (see the caller's object-contain), never cropped.
+// Landscape (wider than tall) keeps its own ratio. Returns null when dimensions
+// are unknown — the caller then keeps the fixed 16:9 box.
+const BOXED_RATIO = 16 / 9; // portrait/square sit in a 16:9 box
 function cardAspectRatio(w?: number | null, h?: number | null): number | null {
   if (!w || !h || w <= 0 || h <= 0) return null;
-  return Math.min(MAX_CARD_RATIO, Math.max(MIN_CARD_RATIO, w / h));
+  return w <= h ? BOXED_RATIO : w / h;
 }
 
 function hostOf(url: string): string {
@@ -467,12 +466,17 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
       );
     }
 
-    // Reserve the image box up front via `aspect-ratio` (it applies before the
-    // resource loads) so the card never grows and shoves the content below it
-    // down once the image arrives. When the backend reported the thumbnail's
-    // real size, the box adapts to it (object-cover fills it edge-to-edge);
-    // otherwise fall back to a fixed 16:9 box with object-contain.
+    // Box reserved at its ratio before load (no flicker). Portrait/square gets a
+    // 16:9 box and object-contain, so the whole image fits by height with the
+    // muted card filling the space left and right (no crop). Landscape keeps its
+    // own ratio and fills it with object-cover (box equals the image, so nothing
+    // is cropped). Unknown dimensions fall back to a fixed 16:9 box.
     const ratio = cardAspectRatio(preview.image_width, preview.image_height);
+    const boxed = !!(
+      preview.image_width &&
+      preview.image_height &&
+      preview.image_width <= preview.image_height
+    );
     return (
       <a
         href={preview.url}
@@ -484,7 +488,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
           src={image ?? undefined}
           alt={preview.title ?? ""}
           priority={priority}
-          className={cn("w-full", ratio ? "object-cover" : "aspect-video object-contain")}
+          className={cn("w-full", ratio ? (boxed ? "object-contain" : "object-cover") : "aspect-video object-contain")}
           style={ratio ? { aspectRatio: String(ratio) } : undefined}
         />
       </a>

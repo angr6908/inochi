@@ -11,6 +11,8 @@ export interface Post {
   parent_post_id: string | null;
   root_post_id: string;
   parent_post: { id: string; username: string; content: string; created_at: string; images: { id: string; url: string; width: number | null; height: number | null }[]; link_previews: LinkPreview[] } | null;
+  /** The thread above this post, root-first up to its parent; empty for a root post. */
+  ancestors?: Post[];
   content: string;
   images: { id: string; url: string; width: number | null; height: number | null }[];
   link_previews: LinkPreview[];

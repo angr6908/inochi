@@ -12,14 +12,23 @@ function cleanFamily(token: string): string {
   return token.trim().replace(/^["']|["']$/g, "");
 }
 
-export function preloadPostFonts(posts: Post[]) {
-  if (typeof document === "undefined" || !document.fonts?.load) return;
-
+// All text a page actually paints, so the right font subsets are warmed: each
+// post's content, its quoted parent, and any reconstructed ancestor thread the
+// timeline renders beneath a reply.
+function pageText(posts: Post[]): string {
   let text = "";
   for (const post of posts) {
     text += post.content;
     if (post.parent_post) text += post.parent_post.content;
+    for (const anc of post.ancestors ?? []) text += anc.content;
   }
+  return text;
+}
+
+export function preloadPostFonts(posts: Post[]) {
+  if (typeof document === "undefined" || !document.fonts?.load) return;
+
+  const text = pageText(posts);
   if (!text) return;
 
   const cs = getComputedStyle(document.documentElement);
@@ -61,11 +70,7 @@ export function preloadAboutFonts() {
 export function postFontsReady(posts: Post[], timeoutMs = 200): Promise<void> {
   if (typeof document === "undefined" || !document.fonts?.load) return Promise.resolve();
 
-  let text = "";
-  for (const post of posts) {
-    text += post.content;
-    if (post.parent_post) text += post.parent_post.content;
-  }
+  const text = pageText(posts);
   if (!text) return Promise.resolve();
 
   const cs = getComputedStyle(document.documentElement);
