@@ -512,7 +512,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
       >
         {/* Title (for x.com this is the tweet content) */}
         {preview.title && (
-          <p className="line-clamp-2 text-base font-semibold leading-snug text-foreground">
+          <p className="line-clamp-2 break-all text-base font-semibold leading-snug text-foreground">
             {preview.title}
           </p>
         )}

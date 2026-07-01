@@ -48,7 +48,7 @@ export const PostContent = memo(function PostContent({ content, priority }: { co
               href={href}
               target="_blank"
               rel="noopener noreferrer"
-              className="break-words text-primary underline"
+              className="break-all text-primary underline"
             >
               {href}
             </a>,

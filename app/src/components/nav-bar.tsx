@@ -115,7 +115,7 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
               placeholder="Search posts..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-9 min-w-0 flex-1"
+              className="h-9 min-w-0 flex-1 rounded-xl border-foreground/10 bg-card dark:bg-card focus-visible:border-foreground/10 focus-visible:ring-0"
             />
             <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={closeSearch}>
               Cancel
@@ -132,7 +132,7 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
                 placeholder="Search posts..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
-                className="h-9"
+                className="h-9 rounded-xl border-foreground/10 bg-card dark:bg-card focus-visible:border-foreground/10 focus-visible:ring-0"
               />
             </form>
 
