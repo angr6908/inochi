@@ -78,11 +78,44 @@ function TimeAgo({ date }: { date: string }) {
   );
 }
 
+// How long after the echoed post this one was made, as a plain duration ("3
+// hours", "2 days") via the standard Intl.NumberFormat unit style. Both times are
+// fixed, so it's a pure value — no ticking and no hydration guard needed.
+const GAP_UNITS: [string, number][] = [
+  ["year", 31536000],
+  ["month", 2592000],
+  ["day", 86400],
+  ["hour", 3600],
+  ["minute", 60],
+  ["second", 1],
+];
+
+function formatGap(fromDateStr: string, toDateStr: string): string {
+  const from = new Date(fromDateStr.replace(" ", "T") + "Z").getTime();
+  const to = new Date(toDateStr.replace(" ", "T") + "Z").getTime();
+  const seconds = Math.max(0, Math.round((to - from) / 1000));
+  for (const [unit, secs] of GAP_UNITS) {
+    if (seconds >= secs || unit === "second") {
+      const n = Math.round(seconds / secs);
+      return new Intl.NumberFormat("en", { style: "unit", unit, unitDisplay: "long" }).format(n);
+    }
+  }
+  return "0 seconds";
+}
+
 interface PostCardProps {
   post: Post;
   onUpdate?: () => void;
   /** Hide the quoted parent post (e.g. on a post's own page, where the parent is already shown). */
   hideParent?: boolean;
+  /** When the quoted parent is hidden because it's the same author's own earlier
+   *  post elsewhere on the page (not the adjacent card), show a compact reference
+   *  that scrolls to it (via onJumpToPost), so the echo stays legible without
+   *  repeating the quoted content. Its created_at gives the gap since that post. */
+  parentLink?: { id: string; created_at: string };
+  /** Scroll to and highlight another post already on the page (the echoed
+   *  original) instead of navigating away. Given by the feed. */
+  onJumpToPost?: (id: string) => void;
   /** Hide the author name (e.g. in a single-author thread where it's redundant). */
   hideUsername?: boolean;
   /** When set, the echo action toggles an inline composer for this post instead
@@ -108,7 +141,7 @@ interface PostCardProps {
   quoteParentOnly?: boolean;
 }
 
-export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onDelete, className, priority, echoVisible = true, echoInMenu, quoteParentOnly }: PostCardProps) {
+export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost, hideUsername, onEcho, onDelete, className, priority, echoVisible = true, echoInMenu, quoteParentOnly }: PostCardProps) {
   const { user } = useAuth();
   const router = useRouter();
   const isOwner = user?.id === post.user_id;
@@ -462,6 +495,24 @@ export function PostCard({ post, onUpdate, hideParent, hideUsername, onEcho, onD
               </div>
             )}
           </div>
+        )}
+
+        {/* Compact echo reference — shown when the quoted parent is the same
+            author's own earlier post elsewhere on the page (not the adjacent card).
+            Scrolls to it and notes how long after it this post was made, so the
+            echo stays legible without repeating the content. */}
+        {parentLink && !showReference && (
+          <button
+            type="button"
+            onClick={() => onJumpToPost?.(parentLink.id)}
+            aria-label="Scroll to the echoed post"
+            className="mt-3.5 inline-flex w-fit items-center gap-1.5 text-sm leading-none text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Reply className="size-3.5 shrink-0" />
+            <span className="leading-none">
+              Echoing a post after {formatGap(parentLink.created_at, post.created_at)}
+            </span>
+          </button>
         )}
 
         {/* Owner dialogs (opened from the actions menu) */}

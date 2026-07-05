@@ -250,11 +250,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
         <>
           {[...loadedPages].map(([pn, pp]) => (
             <div key={pn} hidden={pn !== page}>
-              <PostFeed
-                posts={pp}
-                dedupeReferences={!!activeTag}
-                onUpdate={reloadCurrent}
-              />
+              <PostFeed posts={pp} onUpdate={reloadCurrent} />
             </div>
           ))}
           <PostPagination page={page} pages={pages} onChange={changePage} />

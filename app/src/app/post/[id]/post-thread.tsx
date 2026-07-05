@@ -161,7 +161,7 @@ export function PostThread({ id, initial }: { id: string; initial: InitialThread
               : load()
           }
           onEcho={user ? toggleEditor : undefined}
-          className={cn(highlight === node.id && "ring-2 ring-primary transition-shadow")}
+          className={cn(highlight === node.id && "outline outline-1 outline-primary outline-offset-[-1px]")}
         />
 
         {user && openEditor === node.id && (

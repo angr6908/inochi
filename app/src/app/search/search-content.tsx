@@ -135,7 +135,7 @@ export function SearchContent({ initialQ, initial }: { initialQ: string; initial
           {matches > 0 && (
             <p className="text-sm text-muted-foreground">{matches} result{matches !== 1 ? "s" : ""}</p>
           )}
-          <PostFeed posts={posts} dedupeReferences onUpdate={() => { clearPageCache(); search(q, page); }} />
+          <PostFeed posts={posts} onUpdate={() => { clearPageCache(); search(q, page); }} />
           <PostPagination page={page} pages={pages} onChange={(p) => { search(q, p); scrollToTop(); }} />
         </>
       )}
