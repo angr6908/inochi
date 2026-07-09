@@ -168,18 +168,39 @@ function persistEmojis(emojis: Emoji[]): void {
 export function loadEmojis(): Promise<Emoji[]> {
   if (emojiCache) return Promise.resolve(emojiCache);
   if (!emojiPromise) {
-    emojiPromise = getEmojis()
+    const fetchP: Promise<Emoji[]> = getEmojis()
       .then((r) => {
-        emojiCache = r.emojis;
-        persistEmojis(r.emojis);
-        return emojiCache;
+        // If refreshEmojis replaced the cache while this was in flight, its
+        // list is newer than this response — don't clobber it.
+        if (emojiPromise === fetchP) {
+          emojiCache = r.emojis;
+          persistEmojis(r.emojis);
+        }
+        return emojiCache ?? r.emojis;
       })
       .catch(() => {
-        emojiPromise = null;
+        if (emojiPromise === fetchP) emojiPromise = null;
         return emojiCache ?? readStoredEmojis() ?? [];
       });
+    emojiPromise = fetchP;
   }
   return emojiPromise;
+}
+
+/**
+ * Authoritative re-fetch after an emoji mutation (upload/delete): replaces
+ * every cache layer so post cards and the picker resolve shortcodes against
+ * the current list instead of the one captured at first load.
+ */
+export async function refreshEmojis(): Promise<Emoji[]> {
+  const r = await getEmojis();
+  // Detach any in-flight loadEmojis fetch so a response that raced the
+  // mutation can't overwrite this newer list (see the guard in loadEmojis).
+  emojiPromise = null;
+  emojiCache = r.emojis;
+  storedEmojis = r.emojis;
+  persistEmojis(r.emojis);
+  return r.emojis;
 }
 
 /**
@@ -199,10 +220,24 @@ export const cachedEmojis = (): Emoji[] | null => {
  */
 export const emojisFetched = (): boolean => emojiCache != null;
 
+let seededOnClient = false;
+
 export function seedEmojis(emojis: Emoji[]): void {
-  if (!emojiCache) emojiCache = emojis;
-  // Refresh the instant-paint cache so it reflects newly added emojis instead of
-  // a stale list captured by an earlier load.
+  // On the server this runs per request inside the long-lived Next process and
+  // must always replace the cache: a keep-first policy froze the list captured
+  // on the first request after boot, so SSR kept resolving shortcodes to
+  // deleted emojis' URLs (and hydration doesn't patch attribute mismatches, so
+  // the stale <img src> stuck client-side too). The list comes from the
+  // layout's per-request no-store fetch, so replacing never goes backwards.
+  //
+  // On the client, seed exactly once (at hydration, with the same list the
+  // server rendered with): a later re-render of <SeedEmojis> would replay the
+  // page-load-time props and must not clobber a newer refreshEmojis result.
+  if (typeof window !== "undefined") {
+    if (seededOnClient) return;
+    seededOnClient = true;
+  }
+  emojiCache = emojis;
   persistEmojis(emojis);
 }
 

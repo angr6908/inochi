@@ -147,10 +147,10 @@ pub(crate) fn attach_images(conn: &rusqlite::Connection, preview_id: &str, info:
 }
 
 /// Whether a freshly-saved image with this extension should be background-
-/// converted to AVIF. Already-compact, animated, or vector formats are left
-/// as-is (AVIF/SVG/GIF).
+/// converted to AVIF. Already-compact or animated formats are left as-is
+/// (AVIF/GIF).
 fn should_convert(ext: &str) -> bool {
-    !matches!(ext, "avif" | "svg" | "gif")
+    !matches!(ext, "avif" | "gif")
 }
 
 /// Lowercased host without a leading `www.`.
@@ -378,10 +378,10 @@ fn crop_16_9_rect(src: &str) -> Option<(u32, u32, u32, u32)> {
 }
 
 /// Encode an on-disk image to AVIF (`avifenc -s 0 -d 10`, slowest/highest
-/// quality). `avifenc` reads JPEG/PNG directly; other formats (WebP, …) are
-/// decoded to PNG with `vips` first. When `crop_16_9` is set, a roughly-4:3
-/// source is center-cropped to 16:9 first (YouTube letterboxed thumbnails).
-/// Returns `None` if a step fails.
+/// quality). `avifenc` reads JPEG/PNG directly; SVG is rasterized to a 512px-
+/// wide PNG and other formats (WebP, …) are decoded to PNG with `vips` first.
+/// When `crop_16_9` is set, a roughly-4:3 source is center-cropped to 16:9
+/// first (YouTube letterboxed thumbnails). Returns `None` if a step fails.
 async fn avif_encode_file(src: &str, crop_16_9: bool) -> Option<Vec<u8>> {
     let ext = src.rsplit('.').next().unwrap_or("").to_lowercase();
     let stem = Uuid::new_v4();
@@ -410,6 +410,25 @@ async fn avif_encode_file(src: &str, crop_16_9: bool) -> Option<Vec<u8>> {
         png.clone()
     } else if matches!(ext.as_str(), "jpg" | "jpeg" | "png") {
         std::path::PathBuf::from(src)
+    } else if ext == "svg" {
+        // Vector source: `vips thumbnail` renders the SVG at the target width
+        // (lossless upscaling), so the AVIF stays sharp on high-DPI displays
+        // even when the SVG declares a tiny intrinsic size.
+        let rasterized = tokio::process::Command::new("vips")
+            .arg("thumbnail")
+            .arg(src)
+            .arg(&png)
+            .arg("512")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if !rasterized {
+            return None;
+        }
+        png.clone()
     } else {
         let decoded = tokio::process::Command::new("vips")
             .arg("copy")
@@ -455,7 +474,7 @@ fn is_avif(b: &[u8]) -> bool {
 
 /// Save an uploaded image under `uploads/{dir}` in its original format. Returns
 /// `(filename, convert)` where `convert` is true when a background AVIF
-/// conversion should follow (the source isn't already AVIF/SVG/GIF).
+/// conversion should follow (the source isn't already AVIF/GIF).
 pub(crate) async fn save_original(dir: &str, original_name: &str, data: &[u8]) -> Option<(String, bool)> {
     let ext = if is_avif(data) {
         "avif".to_string()

@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { updatePassword, updateUsername, deleteAccount, getEmojis, uploadEmoji, deleteEmoji, Emoji } from "@/lib/api";
+import { updatePassword, updateUsername, deleteAccount, refreshEmojis, uploadEmoji, deleteEmoji, Emoji } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -36,7 +36,7 @@ export default function SettingsPage() {
   }, [user, router]);
 
   useEffect(() => {
-    getEmojis().then((r) => setEmojis(r.emojis)).catch(() => {});
+    refreshEmojis().then(setEmojis).catch(() => {});
   }, []);
 
   const handleUsername = async (e: React.FormEvent) => {
@@ -84,8 +84,9 @@ export default function SettingsPage() {
       await uploadEmoji(fd);
       setShortcode("");
       setEmojiFile(null);
-      const r = await getEmojis();
-      setEmojis(r.emojis);
+      // Refresh the shared emoji cache too, so post cards and the picker pick
+      // up the new mapping without a reload.
+      setEmojis(await refreshEmojis());
       toast.success("Emoji uploaded");
     } catch (err) {
       toastError(err);
@@ -95,7 +96,7 @@ export default function SettingsPage() {
   const handleDeleteEmoji = async (id: string) => {
     try {
       await deleteEmoji(id);
-      setEmojis((prev) => prev.filter((e) => e.id !== id));
+      setEmojis(await refreshEmojis());
       toast.success("Emoji deleted");
     } catch (err) {
       toastError(err);
