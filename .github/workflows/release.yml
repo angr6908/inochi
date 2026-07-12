@@ -12,6 +12,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Generate logo assets
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libvips-tools libavif-bin
+          app/scripts/generate-inochi-assets.sh
+
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -47,3 +53,4 @@ jobs:
           build-args: |
             APP_VERSION=${{ steps.meta.outputs.version }}
             BUILD_DATE=${{ steps.date.outputs.date }}
+            GIT_SHA=${{ github.sha }}

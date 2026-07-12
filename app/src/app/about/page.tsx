@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { Ghost } from "lucide-react";
+import { InochiWordmark } from "@/components/inochi-wordmark";
 import { AboutRotator } from "./rotator";
 
 export const metadata: Metadata = {
@@ -6,7 +8,9 @@ export const metadata: Metadata = {
 };
 
 const version = process.env.NEXT_PUBLIC_APP_VERSION || "dev";
-const buildDate = process.env.NEXT_PUBLIC_BUILD_DATE || new Date().toISOString().slice(0, 10);
+const buildDate =
+  process.env.NEXT_PUBLIC_BUILD_DATE || new Date().toISOString().slice(0, 10);
+const gitSha = process.env.NEXT_PUBLIC_GIT_SHA;
 
 export default function AboutPage() {
   return (
@@ -19,12 +23,7 @@ export default function AboutPage() {
         >
           命
         </span>
-        <span
-          className="text-xl font-semibold tracking-tight"
-          style={{ fontFamily: "var(--font-heading)" }}
-        >
-          inochi
-        </span>
+        <InochiWordmark className="text-xl" />
       </header>
 
       <div className="flex max-w-md flex-col items-center">
@@ -43,16 +42,34 @@ export default function AboutPage() {
         </a>
       </div>
 
-      <footer className="mt-auto flex flex-col items-center gap-2 text-sm text-muted-foreground">
-        <p>
-          Built with <span className="text-primary">♡</span> and Claude Opus by{" "}
-          <span className="font-medium text-foreground">Prisoner</span>
-        </p>
-        <p className="flex items-center gap-1.5 text-xs tracking-wide text-muted-foreground/60 tabular-nums">
-          <span>v{version}</span>
-          <span aria-hidden className="size-[2px] rounded-full bg-muted-foreground/40" />
-          <span>{buildDate}</span>
-        </p>
+      <footer className="mt-auto flex w-full flex-col items-center py-4 text-center">
+        <Ghost
+          aria-hidden
+          className="mb-2.5 size-5 text-primary"
+          strokeWidth={1.625}
+        />
+
+        <div className="flex flex-col items-center gap-2">
+          <p className="text-sm text-foreground">
+            <span className="font-medium">Yuurei Networks</span>
+            <span className="ml-1 text-muted-foreground">presents</span>
+          </p>
+
+          <p className="text-xs text-muted-foreground/60 tabular-nums">
+            {gitSha ? (
+              <a
+                href={`https://github.com/angr6908/inochi/commit/${gitSha}`}
+                className="underline-offset-4 hover:text-foreground hover:underline"
+              >
+                v{version} ({gitSha.slice(0, 7)})
+              </a>
+            ) : (
+              <>v{version}</>
+            )}
+            {" · "}
+            {buildDate}
+          </p>
+        </div>
       </footer>
     </article>
   );

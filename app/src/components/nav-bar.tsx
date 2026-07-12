@@ -8,6 +8,7 @@ import { preloadAboutFonts } from "@/lib/font-preload";
 import { requestHomeLogoReset } from "@/lib/home-reset";
 import { scrollToTop } from "@/lib/scroll";
 import { Button } from "@/components/ui/button";
+import { InochiWordmark } from "@/components/inochi-wordmark";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ChevronDown, Search } from "lucide-react";
@@ -123,8 +124,8 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
           </form>
         ) : (
           <>
-            <Link href="/" prefetch onClick={handleLogo} className="shrink-0 text-xl font-semibold tracking-tight" style={{ fontFamily: "var(--font-heading)" }}>
-              inochi
+            <Link href="/" prefetch onClick={handleLogo} className="shrink-0">
+              <InochiWordmark className="text-xl" />
             </Link>
 
             <form onSubmit={handleSearch} className="hidden min-w-0 flex-1 min-[400px]:block sm:max-w-sm">

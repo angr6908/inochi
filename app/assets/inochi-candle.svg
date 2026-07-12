@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="976" height="4000" viewBox="112 -240 244 1000">
+  <defs>
+    <linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0%" stop-color="#ff8a16"/>
+      <stop offset="38%" stop-color="#ff541c"/>
+      <stop offset="72%" stop-color="#e92324"/>
+      <stop offset="100%" stop-color="#b90f1c"/>
+    </linearGradient>
+    <mask id="candle-body" maskUnits="userSpaceOnUse" x="170" y="226" width="128" height="534">
+      <rect x="170" y="226" width="128" height="534" fill="#fff"/>
+      <rect id="burned" x="190" y="246" width="88" height="126.110284" fill="#000"/>
+    </mask>
+  </defs>
+  <path d="M170 760V226H298V760Z" fill="#cc7052" mask="url(#candle-body)"/>
+  <path d="M228 155C181 132 182 91 201 59C215 34 232 12 239-25C275 22 291 72 278 113C269 139 249 153 228 155Z"
+        fill="url(#flame)" transform="translate(6 12)"/>
+</svg>
