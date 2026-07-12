@@ -379,6 +379,41 @@ function BrandMark({ icon, className }: { icon: BrandIcon; className?: string })
   );
 }
 
+function TweetCard({ preview, avatar, priority }: { preview: LinkPreview; avatar: string; priority?: boolean }) {
+  const m = preview.author?.match(/^(.*?)\s*\((@[^)]+)\)\s*$/);
+  const name = m ? m[1] : preview.author;
+  const handle = m?.[2] ?? null;
+  const text = preview.title ?? preview.description ?? null;
+
+  return (
+    <a
+      href={preview.url}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group block rounded-xl border border-border bg-card p-3.5 transition-colors hover:bg-accent/40"
+    >
+      <div className="flex items-center gap-2.5">
+        <PreviewThumb
+          src={avatar}
+          alt=""
+          priority={priority}
+          className="size-10 shrink-0 rounded-full bg-muted object-cover"
+        />
+        <div className="flex min-w-0 flex-col leading-tight">
+          <span className="truncate text-[15px] font-semibold text-foreground">{name}</span>
+          {handle && <span className="truncate text-[15px] text-muted-foreground">{handle}</span>}
+        </div>
+      </div>
+
+      {text && (
+        <p className="mt-2.5 whitespace-pre-wrap break-words text-[15px] leading-normal text-foreground">
+          {text}
+        </p>
+      )}
+    </a>
+  );
+}
+
 export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; priority?: boolean }) {
   const [playing, setPlaying] = useState(false);
   const image = preview.thumbnail ?? preview.image_url;
@@ -390,6 +425,12 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
   const site = preview.site_name ?? host;
   const brand = brandIconFor(host);
   const embed = getEmbed(preview.url);
+
+  const isTweet =
+    /(^|\.)(x|twitter)\.com$/.test(host) && preview.image_url?.includes("/profile_images/");
+  if (isTweet && image && preview.author) {
+    return <TweetCard preview={preview} avatar={image} priority={priority} />;
+  }
 
   // Served URLs for a multi-photo preview (e.g. a tweet with several photos),
   // in order. Empty for the common single-image preview.
