@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="976" height="4000" viewBox="95 -240 244 1000">
+<svg xmlns="http://www.w3.org/2000/svg" width="976" height="4000" viewBox="111 -240 244 1000">
   <defs>
     <mask id="candle-body" maskUnits="userSpaceOnUse" x="170" y="226" width="128" height="534">
       <rect x="170" y="226" width="128" height="534" fill="#fff"/>
-      <rect id="burned" x="202" y="258" width="64" height="119.988845" fill="#000"/>
+      <rect id="burned" x="202" y="258" width="64" height="119.989230" fill="#000"/>
     </mask>
   </defs>
   <path d="M170 760V226H298V760Z" fill="#cb7051" mask="url(#candle-body)"/>
