@@ -3,20 +3,14 @@
   <title id="title">inochi</title>
   <desc id="desc">Geist SemiBold wordmark with a time-based candle replacing the first i.</desc>
   <defs>
-    <linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
-      <stop offset="0%" stop-color="#ff8a16"/>
-      <stop offset="38%" stop-color="#ff541c"/>
-      <stop offset="72%" stop-color="#e92324"/>
-      <stop offset="100%" stop-color="#b90f1c"/>
-    </linearGradient>
     <mask id="candle-body" maskUnits="userSpaceOnUse" x="170" y="226" width="128" height="534">
       <rect x="170" y="226" width="128" height="534" fill="#fff"/>
-      <rect id="burned" x="190" y="246" width="88" height="126.110284" fill="#000"/>
+      <rect id="burned" x="202" y="258" width="64" height="119.988845" fill="#000"/>
     </mask>
   </defs>
-  <path d="M170 760V226H298V760Z" fill="#cc7052" mask="url(#candle-body)"/>
+  <path d="M170 760V226H298V760Z" fill="#cb7051" mask="url(#candle-body)"/>
   <path d="M228 155C181 132 182 91 201 59C215 34 232 12 239-25C275 22 291 72 278 113C269 139 249 153 228 155Z"
-        fill="url(#flame)" transform="translate(6 12)"/>
+        fill="#ff1a1a" transform="translate(-60.4 -0.4) scale(1.25 1.08)"/>
   <g fill="#171717">
     <path d="M414 760V226H530L533 317Q555 262 597.5 238Q640 214 693 214Q781 214 828 270.5Q875 327 875 417V760H747V458Q747 390 726.5 354Q706 318 654 318Q602 318 572 354Q542 390 542 458V760Z"/>
     <path d="M1222 772Q1143 772 1083.5 737.5Q1024 703 991.5 640.5Q959 578 959 493Q959 408 991.5 345.5Q1024 283 1083.5 248.5Q1143 214 1222 214Q1301 214 1360 248.5Q1419 283 1451.5 345.5Q1484 408 1484 493Q1484 578 1451.5 640.5Q1419 703 1360 737.5Q1301 772 1222 772ZM1222 668Q1283 668 1317 622Q1351 576 1351 493Q1351 410 1317 364Q1283 318 1222 318Q1160 318 1126 364Q1092 410 1092 493Q1092 576 1126 622Q1160 668 1222 668Z"/>

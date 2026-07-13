@@ -13,8 +13,12 @@ const buildDate =
 const gitSha = process.env.NEXT_PUBLIC_GIT_SHA;
 
 export default function AboutPage() {
+  // 130px = nav spacer (56) + main py (26) + 48 of footer headroom. The 48 used
+  // to be pb-12; folding it into the calc instead keeps the mt-auto footer in
+  // the same place on tall viewports without leaving 48px of scrollable blank
+  // under the footer on short ones.
   return (
-    <article className="flex min-h-[calc(100dvh-82px)] flex-col items-center gap-12 py-12 text-center">
+    <article className="flex min-h-[calc(100dvh-130px)] flex-col items-center gap-12 pt-12 text-center">
       <header className="flex flex-col items-center gap-3">
         <span
           aria-hidden

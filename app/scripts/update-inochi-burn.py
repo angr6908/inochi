@@ -9,7 +9,7 @@ import sys
 START = datetime(2001, 1, 1, tzinfo=timezone.utc)
 END = datetime(2101, 1, 1, tzinfo=timezone.utc)
 CANDLE_HEIGHT = 534
-INNER_BORDER = 20
+INNER_BORDER = 32
 INNER_HEIGHT = CANDLE_HEIGHT - 2 * INNER_BORDER
 
 
