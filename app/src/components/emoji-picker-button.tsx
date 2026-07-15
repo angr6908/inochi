@@ -10,6 +10,11 @@ interface EmojiPickerButtonProps {
   onSelect: (emoji: string) => void;
 }
 
+interface EmojiSelection {
+  id?: string;
+  native?: string;
+}
+
 export function EmojiPickerButton({ onSelect }: EmojiPickerButtonProps) {
   const [customEmojis, setCustomEmojis] = useState<Emoji[]>([]);
   const [open, setOpen] = useState(false);
@@ -48,8 +53,7 @@ export function EmojiPickerButton({ onSelect }: EmojiPickerButtonProps) {
       ]
     : undefined;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const handleSelect = (emoji: any) => {
+  const handleSelect = (emoji: EmojiSelection) => {
     if (emoji.native) {
       onSelect(emoji.native);
     } else if (emoji.id) {

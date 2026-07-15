@@ -71,6 +71,10 @@ export function AboutRotator() {
     };
   }, []);
 
+  // `active` is not read below; it is the restart signal. Each rotation must
+  // replay the ring from full to empty, so the effect has to re-run when the
+  // active line changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `active` restarts the ring
   useEffect(() => {
     const el = ringRef.current;
     if (!el) return;

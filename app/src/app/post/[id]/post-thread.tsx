@@ -67,6 +67,9 @@ export function PostThread({ id, initial }: { id: string; initial: InitialThread
 
   // After the thread renders, scroll to and highlight the post named in the URL
   // hash. Also reacts to in-page hash changes (clicking another post's time).
+  // `followups` is not read below; it re-runs the lookup once echoes are in the
+  // DOM, so a hash naming an echo still resolves after a load or refetch.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `followups` re-runs the lookup
   useEffect(() => {
     if (loading) return;
     const focus = () => {

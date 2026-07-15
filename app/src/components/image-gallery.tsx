@@ -55,7 +55,6 @@ function GalleryImage({
         : { aspectRatio: `${image.width} / ${image.height}` };
 
   return (
-    /* eslint-disable-next-line @next/next/no-img-element */
     <img
       src={src}
       alt=""
@@ -170,18 +169,20 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
       )}
 
       <Dialog open={open} onOpenChange={setOpen}>
+        {/* Transform-free centering keeps enlarged images sharp in WebKit. */}
         <DialogContent
           showCloseButton={false}
           overlayClassName="bg-black/80 supports-backdrop-filter:backdrop-blur-sm"
-          className="flex w-fit max-w-[95vw] flex-col items-center gap-3 border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-[95vw]"
+          className="inset-0 m-auto flex h-fit w-fit max-w-[95vw] translate-none flex-col items-center gap-3 border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-[95vw]"
         >
           <DialogTitle className="sr-only">Image viewer</DialogTitle>
 
           <div className="relative mx-auto w-fit max-w-full justify-self-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={current.url}
               alt=""
+              width={current.width ?? undefined}
+              height={current.height ?? undefined}
               decoding="async"
               className="max-h-[80vh] w-auto max-w-[95vw] rounded-md object-contain"
             />
@@ -236,7 +237,6 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
                       : "opacity-50 ring-1 ring-white/20 hover:opacity-90"
                   }`}
                 >
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={img.url} alt="" decoding="async" className="size-full object-cover" />
                 </button>
               ))}

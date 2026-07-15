@@ -29,7 +29,6 @@ function PreviewThumb({
   style?: React.CSSProperties;
 }) {
   return (
-    // eslint-disable-next-line @next/next/no-img-element
     <img
       src={src}
       alt={alt}
@@ -486,7 +485,6 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
           className="relative block aspect-video w-full overflow-hidden bg-muted"
         >
           {image ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={image}
               alt={preview.title ?? ""}

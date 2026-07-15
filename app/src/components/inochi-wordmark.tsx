@@ -13,7 +13,6 @@ export function InochiWordmark({ className }: { className?: string }) {
         {/* The bitmap carries 24/1000em of padding below the baseline so glyph
             feet are not flush with its edge; it overflows the 1em span by that
             amount while the span itself still bottoms out on the baseline. */}
-        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={INOCHI_WORDMARK_AVIF}
           alt=""

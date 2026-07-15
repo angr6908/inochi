@@ -6,7 +6,7 @@ cd /data
 
 inochi-backend &
 BACK=$!
-node /app/web/server.js &
+bun /app/web/server.js &
 FRONT=$!
 caddy run --config /data/Caddyfile --adapter caddyfile &
 CADDY=$!

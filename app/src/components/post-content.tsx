@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Emoji, loadEmojis, cachedEmojis, emojisFetched } from "@/lib/api";
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 
-const TOKEN = /(https?:\/\/[^\s<>()\[\]{}"']+)|(#[\p{L}\p{N}_]+)|:([a-zA-Z0-9_]+):/gu;
+const TOKEN = /(https?:\/\/[^\s<>()[\]{}"']+)|(#[\p{L}\p{N}_]+)|:([a-zA-Z0-9_]+):/gu;
 
 export const PostContent = memo(function PostContent({ content, priority }: { content: string; priority?: boolean }) {
   const [emojis, setEmojis] = useState<Emoji[]>(() => cachedEmojis() ?? []);
@@ -68,7 +68,6 @@ export const PostContent = memo(function PostContent({ content, priority }: { co
         } else {
           const url = emojiUrl.get(m[3]);
           if (url) {
-            // eslint-disable-next-line @next/next/no-img-element
             out.push(<img key={key++} src={url} alt={m[3]} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : undefined} decoding="sync" className="inline-block h-5 w-5 align-text-bottom" />);
           } else if (!loaded) {
             out.push(<span key={key++} aria-hidden className="inline-block h-5 w-5 align-text-bottom" />);

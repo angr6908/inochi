@@ -80,7 +80,6 @@ export function ImageEditGrid({
           }`}
         >
           {img.preview ? (
-            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={img.preview}
               alt=""

@@ -61,7 +61,7 @@ function getToken(): string | null {
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const token = getToken();
   const headers: Record<string, string> = { ...(options?.headers as Record<string, string>) };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  if (token) headers.Authorization = `Bearer ${token}`;
   if (!(options?.body instanceof FormData)) {
     headers["Content-Type"] = "application/json";
   }

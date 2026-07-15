@@ -9,8 +9,8 @@ tokio = { version = "1.52", features = ["full"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.150"
 rusqlite = { version = "0.40.1", features = ["bundled"] }
-hmac = "0.12.1"
-sha2 = "0.10.9"
+hmac = "0.13.0"
+sha2 = "0.11.0"
 base64 = "0.22.1"
 bcrypt = "0.19.2"
 uuid = { version = "1.23.3", features = ["v4"] }
@@ -20,4 +20,4 @@ tower = "0.5.3"
 reqwest = { version = "0.13.4", features = ["json", "query"] }
 scraper = "0.27.0"
 regex = "1.12.4"
-imagesize = "0.14.0"
+imagesize = "0.15.0"

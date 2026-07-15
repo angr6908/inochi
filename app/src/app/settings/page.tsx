@@ -146,7 +146,6 @@ export default function SettingsPage() {
             <div className="flex flex-wrap gap-3">
               {emojis.map((emoji) => (
                 <div key={emoji.id} className="flex items-center gap-2 rounded-md border p-2">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={emoji.url} alt={emoji.shortcode} className="h-8 w-8" />
                   <span className="text-sm">:{emoji.shortcode}:</span>
                   <Button variant="ghost" size="sm" onClick={() => handleDeleteEmoji(emoji.id)}>✕</Button>
