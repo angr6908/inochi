@@ -1,4 +1,4 @@
-FROM oven/bun:1.3.14-alpine AS web
+FROM oven/bun:canary-alpine AS web
 WORKDIR /web
 ARG APP_VERSION=dev
 ARG BUILD_DATE=
@@ -25,17 +25,10 @@ COPY core/Cargo.toml core/Cargo.lock ./
 COPY core/src ./src
 RUN cargo build --release && strip target/release/inochi-backend
 
-FROM alpine:latest AS runtime
-# alpine:latest ships no Bun, so install it from bun.com and switch to the
-# canary channel. BUN_INSTALL=/usr/local puts the binary on PATH at
-# /usr/local/bin/bun; install-only tools go in a virtual package dropped
-# afterward, leaving just the musl runtime libs Bun links against.
-ENV BUN_INSTALL=/usr/local
-RUN apk add --no-cache ca-certificates caddy vips-tools libavif-apps libgcc libstdc++ \
-    && apk add --no-cache --virtual .bun-deps bash curl unzip \
-    && curl -fsSL https://bun.com/install | bash \
-    && bun upgrade --canary \
-    && apk del .bun-deps
+FROM oven/bun:canary-alpine AS runtime
+# canary-alpine already ships canary Bun and the musl runtime libs it links
+# against, so only the app's own runtime deps need adding.
+RUN apk add --no-cache ca-certificates caddy vips-tools libavif-apps
 
 WORKDIR /app
 
