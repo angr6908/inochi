@@ -25,10 +25,19 @@ COPY core/Cargo.toml core/Cargo.lock ./
 COPY core/src ./src
 RUN cargo build --release && strip target/release/inochi-backend
 
-FROM oven/bun:canary-alpine AS runtime
-# canary-alpine already ships canary Bun and the musl runtime libs it links
-# against, so only the app's own runtime deps need adding.
-RUN apk add --no-cache ca-certificates caddy vips-tools libavif-apps
+# node:26-alpine is Alpine 3.24-based, so the runtime below must stay on 3.24 to
+# keep the copied binary's musl ABI matched. Bump both tags together.
+FROM node:26-alpine AS nodedist
+
+FROM alpine:3.24 AS runtime
+# Only the interpreter comes across, not the rest of node:26-alpine: npm, the
+# C++ headers and friends are build-time tooling worth ~18MB that nothing here
+# invokes, since entrypoint.sh execs server.js directly. The binary declares
+# exactly three NEEDED libs - libstdc++.so.6, libgcc_s.so.1, libc.musl - and
+# interpreter /lib/ld-musl-x86_64.so.1; musl is in the base and libstdc++ pulls
+# libgcc in with it, so this apk line is the complete runtime closure.
+COPY --from=nodedist /usr/local/bin/node /usr/local/bin/node
+RUN apk add --no-cache ca-certificates caddy vips-tools libavif-apps libstdc++
 
 WORKDIR /app
 
@@ -38,9 +47,11 @@ COPY --from=backend /src/target/release/inochi-backend /usr/local/bin/inochi-bac
 COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
 
 # HOSTNAME keeps the Next server on loopback, so Caddy stays the only way in;
-# it would otherwise default to 0.0.0.0. NODE_ENV is not set here: the
-# standalone server.js hardcodes production and nothing else reads it.
-ENV NEXT_TELEMETRY_DISABLED=1 \
+# it would otherwise default to 0.0.0.0. NODE_ENV is set because transitive deps
+# (React among them) branch on it for dev-only warnings and bookkeeping, even
+# though the standalone server.js itself hardcodes production.
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=127.0.0.1 \
     XDG_CONFIG_HOME=/data/.caddy/config \
