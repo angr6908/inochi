@@ -557,10 +557,9 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
         )}
 
         {/* Footer row, left-aligned: the source site's brand logo leads
-            (standing in for "By"), then the author. With no author the logo
-            sits alone in this same spot rather than pinned to the right. An
-            unmapped site falls back to the literal "By" before an author, or to
-            the domain text on its own. */}
+            (standing in for "By"), then the author. With no author, show both
+            the logo and site name. An unmapped site falls back to the literal
+            "By" before an author, or to the site name on its own. */}
         <div className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
           {preview.author ? (
             <>
@@ -568,7 +567,10 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
               <span className="min-w-0 truncate font-medium">{preview.author}</span>
             </>
           ) : brand ? (
-            <BrandMark icon={brand} />
+            <>
+              <BrandMark icon={brand} />
+              <span className="min-w-0 truncate font-medium">{site}</span>
+            </>
           ) : (
             <span className="shrink-0 font-medium">{site}</span>
           )}
