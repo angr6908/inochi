@@ -3,10 +3,10 @@
   <defs>
     <mask id="candle-body" maskUnits="userSpaceOnUse" x="170" y="226" width="128" height="534">
       <rect x="170" y="226" width="128" height="534" fill="#fff"/>
-      <rect id="burned" x="202" y="258" width="64" height="119.989230" fill="#000"/>
+      <rect id="burned" x="202" y="258" width="64" height="120.144863" fill="#000"/>
     </mask>
   </defs>
-  <path d="M170 760V226H298V760Z" fill="#cb7051" mask="url(#candle-body)"/>
+  <path d="M170 760V226H298V760Z" fill="#c6613f" mask="url(#candle-body)"/>
   <path d="M228 155C181 132 182 91 201 59C215 34 232 12 239-25C275 22 291 72 278 113C269 139 249 153 228 155Z"
-        fill="#ff1a1a" transform="translate(-60.4 -0.4) scale(1.25 1.08)"/>
+        fill="#c6613f" transform="translate(-60.4 -0.4) scale(1.25 1.08)"/>
 </svg>

@@ -1,5 +1,5 @@
 export const SITE_NAME = "inochi";
-export const SITE_DESCRIPTION = "A minimal microblog";
+export const SITE_DESCRIPTION = "How to escape from the prison of existence?";
 
 export const BACKEND_ORIGIN = (
   process.env.BACKEND_ORIGIN || "http://127.0.0.1:3001"

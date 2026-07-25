@@ -1,10 +1,19 @@
 import type { Metadata } from "next";
 import { Ghost } from "lucide-react";
 import { InochiWordmark } from "@/components/inochi-wordmark";
+import { SITE_NAME, SITE_DESCRIPTION } from "@/lib/site";
 import { AboutRotator } from "./rotator";
 
 export const metadata: Metadata = {
   title: "About · inochi",
+  alternates: { canonical: "/about" },
+  openGraph: {
+    type: "website",
+    siteName: SITE_NAME,
+    url: "/about",
+    title: `About · ${SITE_NAME}`,
+    description: SITE_DESCRIPTION,
+  },
 };
 
 const version = process.env.NEXT_PUBLIC_APP_VERSION || "dev";

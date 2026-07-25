@@ -19,6 +19,7 @@ export interface InitialPage {
   posts: Post[];
   page: number;
   pages: number;
+  total: number;
 }
 
 interface HomeCache {
@@ -26,6 +27,7 @@ interface HomeCache {
   posts: Post[];
   page: number;
   pages: number;
+  total: number;
 }
 
 let homeCache: HomeCache | null = null;
@@ -34,7 +36,7 @@ let homeScrollY = 0;
 // Cache each fetched page's data so turning to an already-loaded (or prefetched)
 // page renders instantly from memory — no async fetch, no intermediate old-page
 // frame, no layout shift. Invalidated whenever the timeline changes.
-const pageCache = new Map<string, { posts: Post[]; pages: number }>();
+const pageCache = new Map<string, { posts: Post[]; pages: number; total: number }>();
 const cacheKey = (tag: string | undefined, page: number) => `${tag ?? ""}:${page}`;
 
 function clearPageCache() {
@@ -60,7 +62,7 @@ function prefetchNeighbors(page: number, tag: string | undefined, pages: number)
     if (p < 1 || p > pages || pageCache.has(cacheKey(tag, p))) continue;
     getPosts(p, 20, tag)
       .then((r) => {
-        pageCache.set(cacheKey(tag, r.page), { posts: r.posts, pages: r.pages });
+        pageCache.set(cacheKey(tag, r.page), { posts: r.posts, pages: r.pages, total: r.total });
         preloadPostFonts(r.posts);
         preloadImages(pageImageUrls(r.posts));
       })
@@ -86,6 +88,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
   );
   const [page, setPage] = useState(seed?.page ?? 1);
   const [pages, setPages] = useState(seed?.pages ?? 0);
+  const [total, setTotal] = useState(seed?.total ?? 0);
   const [loading, setLoading] = useState(!seed);
   const posts = useMemo(() => loadedPages.get(page) ?? [], [loadedPages, page]);
   const [activeTag, setActiveTag] = useState<string | undefined>(tagParam);
@@ -95,6 +98,11 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
   if (tagParam !== prevTag) {
     setPrevTag(tagParam);
     setActiveTag(tagParam);
+    // The count belongs to the tag we are leaving. activeTag flips here, a
+    // render before the new feed lands, so without this the header pairs the
+    // new tag with the old tag's total for a beat. Take the cached count when
+    // this tag's first page is already in hand, so revisits stay instant.
+    setTotal(pageCache.get(cacheKey(tagParam, 1))?.total ?? 0);
   }
 
   const reqRef = useRef(0);
@@ -126,9 +134,10 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       if (myReq !== reqRef.current) return;
       setLoadedPages((prev) => withPage(prev, p, cached.posts));
       setPages(cached.pages);
+      setTotal(cached.total);
       setPage(p);
       setLoading(false);
-      homeCache = { tag, posts: cached.posts, page: p, pages: cached.pages };
+      homeCache = { tag, posts: cached.posts, page: p, pages: cached.pages, total: cached.total };
       prefetchNeighbors(p, tag, cached.pages);
       return;
     }
@@ -139,15 +148,17 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       // (after PostContent mounts and fetches them), well after the images.
       const [postsRes] = await Promise.all([getPosts(p, 20, tag), loadEmojis()]);
       if (myReq !== reqRef.current) return;
-      pageCache.set(cacheKey(tag, postsRes.page), { posts: postsRes.posts, pages: postsRes.pages });
+      pageCache.set(cacheKey(tag, postsRes.page), { posts: postsRes.posts, pages: postsRes.pages, total: postsRes.total });
       setLoadedPages((prev) => withPage(prev, postsRes.page, postsRes.posts));
       setPages(postsRes.pages);
+      setTotal(postsRes.total);
       setPage(postsRes.page);
       homeCache = {
         tag,
         posts: postsRes.posts,
         page: postsRes.page,
         pages: postsRes.pages,
+        total: postsRes.total,
       };
       prefetchNeighbors(postsRes.page, tag, postsRes.pages);
     } catch {
@@ -166,8 +177,8 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
   useEffect(() => {
     if (seededRef.current || snap || !seedServer) return;
     seededRef.current = true;
-    pageCache.set(cacheKey(tagParam, seedServer.page), { posts: seedServer.posts, pages: seedServer.pages });
-    homeCache = { tag: tagParam, posts: seedServer.posts, page: seedServer.page, pages: seedServer.pages };
+    pageCache.set(cacheKey(tagParam, seedServer.page), { posts: seedServer.posts, pages: seedServer.pages, total: seedServer.total });
+    homeCache = { tag: tagParam, posts: seedServer.posts, page: seedServer.page, pages: seedServer.pages, total: seedServer.total };
     loadEmojis();
     prefetchNeighbors(seedServer.page, tagParam, seedServer.pages);
   }, [snap, seedServer, tagParam]);
@@ -183,7 +194,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     if (restore && homeCache) {
       const snapshot = homeCache;
       window.scrollTo({ top: homeScrollY, behavior: "instant" });
-      pageCache.set(cacheKey(snapshot.tag, snapshot.page), { posts: snapshot.posts, pages: snapshot.pages });
+      pageCache.set(cacheKey(snapshot.tag, snapshot.page), { posts: snapshot.posts, pages: snapshot.pages, total: snapshot.total });
       prefetchNeighbors(snapshot.page, snapshot.tag, snapshot.pages);
       return;
     }
@@ -226,7 +237,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     if (loadedPages.has(n)) {
       setLoadedPages((prev) => withPage(prev, n, prev.get(n)!));
       setPage(n);
-      homeCache = { tag: activeTag, posts: loadedPages.get(n)!, page: n, pages };
+      homeCache = { tag: activeTag, posts: loadedPages.get(n)!, page: n, pages, total };
       prefetchNeighbors(n, activeTag, pages);
     } else {
       load(n, activeTag);
@@ -240,11 +251,24 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     <div className="space-y-4">
       {user && <PostEditor onPostCreated={() => { resetPages(); load(1, activeTag); }} />}
 
+      {/* Gated on the count as well as the tag so the line never paints in two
+          stages. A direct /?tag= load has the total in the server seed and
+          renders complete in the first paint; on a client-side tag navigation
+          useSearchParams() flips the tag a render before the new feed lands, so
+          showing the tag alone would pair it with the previous feed's count. */}
+      {activeTag && total > 0 && (
+        <p className="text-sm text-muted-foreground">
+          #{activeTag} · {total} result{total !== 1 ? "s" : ""}
+        </p>
+      )}
+
       {posts.length === 0 ? (
         loading ? (
           <PostListSkeleton />
         ) : (
-          <p className="text-center text-muted-foreground py-8">No posts yet</p>
+          <p className="text-center text-muted-foreground py-8">
+            {activeTag ? <>No results for #{activeTag}</> : "No posts yet"}
+          </p>
         )
       ) : (
         <>

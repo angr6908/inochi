@@ -1,7 +1,16 @@
+import type { Metadata } from "next";
 import { Suspense } from "react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { serverGet } from "@/lib/ssr";
+import { SITE_NAME, SITE_DESCRIPTION } from "@/lib/site";
 import { HomeContent, type InitialPage } from "./home-content";
+
+// Every ?tag= view renders the same shell as the untagged feed, so they all
+// point back at "/" instead of competing with it as separate URLs.
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+  openGraph: { type: "website", siteName: SITE_NAME, url: "/", title: SITE_NAME, description: SITE_DESCRIPTION },
+};
 
 export default async function HomePage({
   searchParams,

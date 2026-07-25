@@ -11,7 +11,8 @@ import { Providers } from "./providers";
 import { SeedEmojis } from "@/components/seed-emojis";
 import { fetchEmojis } from "@/lib/ssr";
 import { formatTimestamp } from "@/lib/format-time";
-import { SITE_NAME, SITE_DESCRIPTION, resolveOrigin } from "@/lib/site";
+import { SITE_NAME, SITE_DESCRIPTION } from "@/lib/site";
+import { currentOrigin } from "@/lib/origin";
 
 const roboto = Roboto({
   subsets: ["latin"],
@@ -36,8 +37,11 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
-export function generateMetadata(): Metadata {
-  const origin = resolveOrigin({});
+// The origin must come from the live request: SITE_DOMAINS is unset in the
+// deployment, so resolveOrigin({}) fell back to localhost and every absolute
+// URL Next derives from metadataBase (og:url, canonicals) pointed there.
+export async function generateMetadata(): Promise<Metadata> {
+  const origin = await currentOrigin();
   return {
     metadataBase: new URL(origin),
     title: SITE_NAME,

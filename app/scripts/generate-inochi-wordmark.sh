@@ -26,7 +26,7 @@ defs = re.search(r"<defs>.*?</defs>", candle, re.S).group(0)
 body, flame = re.findall(r"<path\b.*?/>", candle, re.S)
 letters = re.findall(
     r"<path\b.*?/>",
-    re.search(r'<g fill="#171717">(.*?)</g>', logo, re.S).group(1),
+    re.search(r'<g fill="#c6613f">(.*?)</g>', logo, re.S).group(1),
     re.S,
 )
 assert len(letters) == 5, "expected the five nochi letter paths"
@@ -38,7 +38,7 @@ assert len(letters) == 5, "expected the five nochi letter paths"
 # as authored). Box width: 2773 - 5*TRACKING. Height 1024 = 1em of 1000 above
 # the baseline plus 24 of padding so the glyph feet are not flush with the
 # bitmap edge.
-TEXT_COLOR = "#141413"  # rendered body foreground the live text used
+TEXT_COLOR = "#c6613f"  # --primary, the light theme's brand terracotta
 # -webkit-font-smoothing: antialiased drew the live text thinner than the
 # outlines' geometric coverage. Eroding each glyph edge by THINNING/2 units
 # (white fill + black stroke inside a mask) matches that optical weight while
