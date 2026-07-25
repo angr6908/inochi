@@ -26,6 +26,13 @@ async fn main() {
 
     let db = db::init_db();
 
+    // Cached previews are never re-resolved, so bring the ones stored under older
+    // naming rules up to date (site name, title suffix).
+    let fixed = handlers::link_preview::normalize_cached_previews(&db);
+    if fixed > 0 {
+        println!("[previews] normalized {} cached preview(s)", fixed);
+    }
+
     // Background: auto-resolve link previews for imported posts (posts that have
     // URLs but no previews yet), rate-limited so a large import drains gradually.
     {

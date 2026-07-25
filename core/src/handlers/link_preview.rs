@@ -193,6 +193,30 @@ fn resolve_url(base: &str, link: &str) -> String {
     }
 }
 
+/// Second-level pieces of a multi-part public suffix, which name no brand
+/// ("bbc.co.uk", "asahi.co.jp") — the label before one of these is the brand.
+const SUFFIX_LABELS: [&str; 8] = ["co", "com", "org", "net", "ac", "gov", "edu", "or"];
+
+/// The brand label of a host: the segment before its public suffix, so a
+/// subdomain never stands in for the site (`en.wikipedia.org` -> `wikipedia`,
+/// `news.ycombinator.com` -> `ycombinator`, `bbc.co.uk` -> `bbc`). Matches the
+/// label the client keys brand icons by, so the icon and the name agree.
+fn brand_label(host: &str) -> &str {
+    let parts: Vec<&str> = host.split('.').filter(|s| !s.is_empty()).collect();
+    match parts.len() {
+        0 => host,
+        1 => parts[0],
+        n => {
+            let second_last = parts[n - 2];
+            if n >= 3 && SUFFIX_LABELS.contains(&second_last) {
+                parts[n - 3]
+            } else {
+                second_last
+            }
+        }
+    }
+}
+
 /// Pretty default site name for hosts that don't expose `og:site_name`.
 fn default_site_name(host: &str) -> String {
     if host.contains("youtube") || host.contains("youtu.be") {
@@ -204,12 +228,38 @@ fn default_site_name(host: &str) -> String {
     if host.contains("twitch.tv") {
         return "Twitch".into();
     }
-    let label = host.split('.').next().unwrap_or(host);
+    let label = brand_label(host);
     let mut chars = label.chars();
     match chars.next() {
         Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
         None => host.to_string(),
     }
+}
+
+/// Separators sites put between a page title and their own name.
+const TITLE_SEPARATORS: [&str; 6] = [" - ", " – ", " — ", " | ", " · ", " :: "];
+
+/// Drop a trailing "<separator><site name>" from a page title — Wikipedia serves
+/// `Santiago Ramón y Cajal - Wikipedia`, and plenty of sites do the same. The
+/// card already names the source in its footer, so the repeat is just noise that
+/// eats the two lines the title gets. Only an exact site-name match is stripped,
+/// and never the whole title.
+fn strip_site_suffix(title: &str, site: &str) -> String {
+    let site = site.trim();
+    if site.is_empty() {
+        return title.to_string();
+    }
+    for sep in TITLE_SEPARATORS {
+        if let Some((head, tail)) = title.rsplit_once(sep) {
+            if tail.trim().eq_ignore_ascii_case(site) {
+                let head = head.trim_end();
+                if !head.is_empty() {
+                    return head.to_string();
+                }
+            }
+        }
+    }
+    title.to_string()
 }
 
 /// Map an x.com / twitter.com status URL onto the FixTweet JSON API, which
@@ -899,6 +949,15 @@ async fn build_preview(url: &str) -> LinkPreviewInfo {
 
     let site_name = site_name.or_else(|| Some(default_site_name(&host)));
 
+    // A page title that ends in the site's own name loses that tail — the footer
+    // already shows the source. Skipped for X and Twitch, whose "title" is a tweet
+    // body or a stream title rather than a page title.
+    if !is_twitter && twitch_t.is_none() {
+        if let (Some(t), Some(s)) = (&title, &site_name) {
+            title = Some(strip_site_suffix(t, s));
+        }
+    }
+
     // Download the thumbnail so it is served from this server, keeping its
     // measured dimensions for the card's aspect ratio.
     let (thumbnail, image_width, image_height) = if let Some(img) = image_url.clone() {
@@ -1079,6 +1138,60 @@ pub async fn resolve_and_cache(db: &Db, url: &str) -> Option<(String, LinkPrevie
     Some((id, info))
 }
 
+/// Bring already-cached previews in line with the current naming rules, once at
+/// startup. Previews are cached forever and never re-resolved, so rows stored
+/// before those rules changed would otherwise keep showing a subdomain as the
+/// site name (`en.wikipedia.org` -> "En") and a title ending in the site's own
+/// name. Site names are only rewritten when the stored value is exactly what the
+/// old subdomain fallback would have produced, leaving any real `og:site_name`
+/// alone. Returns the number of rows changed.
+pub fn normalize_cached_previews(db: &Db) -> usize {
+    let conn = db.conn();
+    let rows: Vec<(String, String, Option<String>, Option<String>)> = crate::db::query_rows(
+        &conn,
+        "SELECT id, url, title, site_name FROM link_previews",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+    );
+
+    let mut changed = 0;
+    for (id, url, title, site_name) in rows {
+        let host = host_of(&url);
+        // The name the pre-fix fallback would have written for this host.
+        let legacy_default = {
+            let label = host.split('.').next().unwrap_or(&host);
+            let mut chars = label.chars();
+            match chars.next() {
+                Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                None => host.clone(),
+            }
+        };
+        let new_site = match &site_name {
+            Some(s) if *s == legacy_default => default_site_name(&host),
+            _ => site_name.clone().unwrap_or_else(|| default_site_name(&host)),
+        };
+        let is_twitter = host == "x.com" || host.contains("twitter.com");
+        let new_title = match (&title, host.contains("twitch.tv") || is_twitter) {
+            (Some(t), false) => Some(strip_site_suffix(t, &new_site)),
+            _ => title.clone(),
+        };
+
+        if Some(new_site.as_str()) == site_name.as_deref() && new_title == title {
+            continue;
+        }
+        if conn
+            .execute(
+                "UPDATE link_previews SET title = ?1, site_name = ?2 WHERE id = ?3",
+                rusqlite::params![new_title, new_site, id],
+            )
+            .is_ok()
+        {
+            changed += 1;
+        }
+    }
+    changed
+}
+
 /// HTTP endpoint — used by the editor for live previews.
 pub async fn fetch_link_preview(
     AuthUser(_user_id): AuthUser,
@@ -1095,3 +1208,4 @@ pub async fn fetch_link_preview(
         None => Err(err(StatusCode::BAD_GATEWAY, "Failed to fetch URL")),
     }
 }
+
