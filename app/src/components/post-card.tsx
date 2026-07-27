@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { PostContent } from "./post-content";
+import { PostBody } from "./post-body";
 import { ImageGallery } from "./image-gallery";
 import { ImageEditGrid } from "./image-edit-grid";
 import { LinkPreviewCard } from "./link-preview-card";
@@ -416,7 +417,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
             :last-child so it never collapses the spacing when media/reference
             actually follows. */}
         <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[6px]">
-          <PostContent content={post.content} priority={priority} />
+          <PostBody content={post.content} priority={priority} />
         </div>
 
         {/* Images, link previews and the reference card — the "cards inside the
@@ -523,11 +524,16 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                 <DialogHeader>
                   <DialogTitle>Edit post</DialogTitle>
                 </DialogHeader>
+                {/* The field grows with its content (`field-sizing-content`),
+                    so `rows` is only a floor — a long post would otherwise
+                    inflate the dialog past the viewport. Cap it and let the
+                    text scroll inside the field, keeping the image and echo
+                    controls below it in reach. */}
                 <Textarea
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
                   rows={5}
-                  className="font-content leading-relaxed placeholder:font-sans"
+                  className="max-h-[45dvh] font-content leading-relaxed placeholder:font-sans"
                 />
 
                 {/* Image controls: reorder/remove existing or newly-added

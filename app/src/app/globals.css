@@ -250,3 +250,64 @@
 .font-content :is(h1, h2, h3, h4, h5, h6) {
   font-family: var(--font-content);
 }
+
+/* ── Long posts: clipped, with a Show more/less toggle ─────────────────────
+   Nothing here is decided at runtime. lib/post-clamp.ts derives from the text
+   alone which viewport buckets a post overflows in and writes them into
+   `data-clamp`; these queries only pick the bucket the viewport is in. So the
+   server HTML is already the collapsed HTML — no measuring pass, no
+   post-hydration reflow on a first load, a refresh or an SSR'd page — and a
+   viewport change re-decides for free, in CSS.
+
+   Every switch is a custom property with an inert default, so the shared rules
+   below are written once and each bucket only flips the variables. `content`
+   takes `none` as a value, which removes the fade's pseudo-element outright. */
+.post-clamp-body {
+  position: relative;
+  max-height: var(--post-clamp-h, none);
+  overflow: hidden;
+}
+.post-clamp-body::after {
+  content: var(--post-clamp-fade, none);
+  position: absolute;
+  inset-inline: 0;
+  bottom: 0;
+  height: 2lh;
+  background: linear-gradient(to bottom, transparent, var(--card));
+  pointer-events: none;
+}
+.post-clamp-toggle {
+  display: var(--post-clamp-toggle, none);
+}
+
+/* The buckets, matching BUCKET_TEXT_PX in lib/post-clamp.ts. The clamp height
+   comes from POST_CLAMP_LINES via the inline --post-clamp-lines, so the cut and
+   the threshold that chose it can never drift apart. */
+@media (width < 420px) {
+  .post-clamp[data-clamp~="0"] {
+    --post-clamp-h: calc(var(--post-clamp-lines, 10) * 1lh);
+    --post-clamp-fade: "";
+    --post-clamp-toggle: block;
+  }
+}
+@media (420px <= width < 520px) {
+  .post-clamp[data-clamp~="1"] {
+    --post-clamp-h: calc(var(--post-clamp-lines, 10) * 1lh);
+    --post-clamp-fade: "";
+    --post-clamp-toggle: block;
+  }
+}
+@media (width >= 520px) {
+  .post-clamp[data-clamp~="2"] {
+    --post-clamp-h: calc(var(--post-clamp-lines, 10) * 1lh);
+    --post-clamp-fade: "";
+    --post-clamp-toggle: block;
+  }
+}
+
+/* Expanded: drop the clip and the fade but keep the toggle, so it can collapse
+   again. Same specificity as the bucket rules, so it must stay after them. */
+.post-clamp[data-expanded] {
+  --post-clamp-h: none;
+  --post-clamp-fade: none;
+}
