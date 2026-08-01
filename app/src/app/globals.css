@@ -285,21 +285,21 @@
    the threshold that chose it can never drift apart. */
 @media (width < 420px) {
   .post-clamp[data-clamp~="0"] {
-    --post-clamp-h: calc(var(--post-clamp-lines, 10) * 1lh);
+    --post-clamp-h: calc(var(--post-clamp-lines, 30) * 1lh);
     --post-clamp-fade: "";
     --post-clamp-toggle: block;
   }
 }
 @media (420px <= width < 520px) {
   .post-clamp[data-clamp~="1"] {
-    --post-clamp-h: calc(var(--post-clamp-lines, 10) * 1lh);
+    --post-clamp-h: calc(var(--post-clamp-lines, 30) * 1lh);
     --post-clamp-fade: "";
     --post-clamp-toggle: block;
   }
 }
 @media (width >= 520px) {
   .post-clamp[data-clamp~="2"] {
-    --post-clamp-h: calc(var(--post-clamp-lines, 10) * 1lh);
+    --post-clamp-h: calc(var(--post-clamp-lines, 30) * 1lh);
     --post-clamp-fade: "";
     --post-clamp-toggle: block;
   }

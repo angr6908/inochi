@@ -18,7 +18,7 @@
 /** Lines of post text kept visible before a post is clipped. The CSS clamp
  *  height is derived from this same number (PostBody passes it down as
  *  `--post-clamp-lines`), so the threshold and the cut can't drift apart. */
-export const POST_CLAMP_LINES = 10;
+export const POST_CLAMP_LINES = 30;
 
 /** Mean glyph advance of the post font (Roboto 400) at the content size (15px),
  *  in px, over English prose including spaces. */
