@@ -35,6 +35,15 @@ export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  // Paint the browser's own chrome (mobile address bar, PWA status bar) with
+  // the page's --background for the scheme in force. Without it the chrome
+  // keeps its light default and a dark page loads under a bright bar. Literal
+  // hex rather than var(--background): the meta tag is read before the
+  // stylesheet, so a custom property would resolve to nothing.
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#faf9f5" },
+    { media: "(prefers-color-scheme: dark)", color: "#141413" },
+  ],
 };
 
 // The origin must come from the live request: SITE_DOMAINS is unset in the

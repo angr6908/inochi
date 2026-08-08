@@ -33,10 +33,11 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
   const pathname = usePathname();
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
-  // Scroll position captured when the mobile search opens, so we can restore it
-  // on close. The soft keyboard can still nudge the document's scroll by a few
-  // px; if that residual offset isn't undone it can cross the nav hairline's
-  // threshold, flipping the hairline on/off.
+  // Scroll position captured when the search opens, so we can restore it on
+  // close. A soft keyboard can still nudge the document's scroll by a few px;
+  // if that residual offset isn't undone it can cross the nav hairline's
+  // threshold, flipping the hairline on/off. (A no-op where there's no
+  // keyboard, which is most of the time now that search opens at every width.)
   const scrollBeforeSearch = useRef(0);
   const searchFormRef = useRef<HTMLFormElement>(null);
 
@@ -128,22 +129,13 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
               <InochiWordmark className="text-xl" />
             </Link>
 
-            <form onSubmit={handleSearch} className="hidden min-w-0 flex-1 min-[400px]:block sm:max-w-sm">
-              <Input
-                placeholder="Search posts..."
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                className="h-9 rounded-xl border-foreground/10 bg-card dark:bg-card focus-visible:border-foreground/10 focus-visible:ring-0"
-              />
-            </form>
-
             <div className="ml-auto flex shrink-0 items-center gap-1 sm:gap-2">
               <Button
                 type="button"
                 variant="ghost"
                 size="icon"
                 aria-label="Search"
-                className="size-7 min-[400px]:hidden"
+                className="size-7"
                 onClick={openSearch}
               >
                 <Search className="size-4" />

@@ -113,7 +113,12 @@ export function PostEditor({ parentPostId, placeholder, onPostCreated }: PostEdi
           value={content}
           onChange={handleChange}
           rows={2}
-          className="min-h-[60px] resize-none rounded-none border-0 bg-transparent px-0.5 py-0 font-content text-base leading-relaxed shadow-none placeholder:font-sans focus-visible:ring-0 md:text-base"
+          // The composer is a bare writing surface on the card, not a boxed
+          // field: no border, no fill. `dark:bg-transparent` is load-bearing —
+          // Textarea's own `dark:bg-input/30` is a different variant group from
+          // the `bg-transparent` here, so tailwind-merge keeps both and the dark
+          // fill would otherwise paint a lighter panel behind the text.
+          className="min-h-[60px] resize-none rounded-none border-0 bg-transparent px-0.5 py-0 font-content text-base leading-relaxed shadow-none placeholder:font-sans focus-visible:ring-0 md:text-base dark:bg-transparent"
         />
         <ImageEditGrid images={images} onReorder={moveImage} onRemove={removeImage} />
         <div className="flex items-center justify-between">

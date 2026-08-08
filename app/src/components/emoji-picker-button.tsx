@@ -82,7 +82,12 @@ export function EmojiPickerButton({ onSelect }: EmojiPickerButtonProps) {
           <PickerComponent
             onEmojiSelect={handleSelect}
             custom={custom}
-            theme="light"
+            // The picker is a self-contained widget that paints its own surface,
+            // so it can't inherit the page's scheme from CSS. "auto" makes it
+            // resolve the same signal our stylesheet does — it reads
+            // prefers-color-scheme and subscribes to changes — which keeps it in
+            // step with the OS-driven dark mode without a theme provider.
+            theme="auto"
             previewPosition="none"
             skinTonePosition="none"
           />

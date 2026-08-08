@@ -2,7 +2,13 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* Dark mode follows the OS, with no class on <html> and no theme script. The
+   whole switch lives in CSS, so it is resolved by the render-blocking
+   stylesheet before the first paint — a fresh load or a refresh in dark mode
+   never flashes light. A class-based scheme cannot promise that: the class is
+   set by JS, which is one frame late by construction. It also means the server
+   HTML is theme-agnostic, so there is nothing for hydration to mismatch on. */
+@custom-variant dark (@media (prefers-color-scheme: dark));
 
 /* Fonts (all self-hosted):
    - Geist — UI chrome (via the geist npm package, set on <html> in layout.tsx).
@@ -81,8 +87,9 @@
 }
 
 /* ─────────────────────────────────────────────
-   Claude.ai Design Tokens — EXACT values from
-   [data-theme=claude] in production CSS
+   Claude Design Tokens. Light: EXACT values from
+   [data-theme=claude] in claude.ai's production
+   CSS. Dark: from claude.com's — see that block.
    ───────────────────────────────────────────── */
 
 :root {
@@ -106,6 +113,12 @@
   --font-heading: var(--font-geist-sans), var(--font-noto-sans-jp), sans-serif;
   --font-content: var(--font-roboto), var(--font-noto-sans-jp), sans-serif;
   --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+
+  /* Both schemes are supported, so the UA picks by OS preference. This is what
+     paints the canvas, the scrollbars and native form controls dark — and it
+     applies at stylesheet parse, before the first frame, so the white default
+     canvas is never painted at all. */
+  color-scheme: light dark;
 
   /* Surfaces */
   --background: hsl(48 33.3% 97.1%);
@@ -159,49 +172,67 @@
   --sidebar-ring: hsl(15 54.2% 51.2%);
 }
 
-.dark {
-  /* Claude dark mode tokens from [data-theme=claude][data-mode=dark] */
-  --background: hsl(60 2.1% 18.4%);
-  --foreground: hsl(48 33.3% 97.1%);
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* Dark tokens lifted from claude.com's own production stylesheet: its
+       `@media (prefers-color-scheme: dark)` block maps semantic `--theme-*`
+       roles onto the `--color-gray-*` / `--color-clay-*` primitives, and the
+       hexes below are those primitives verbatim. The role each one is playing
+       upstream is named in the comment, so a future re-extraction can be
+       checked role-by-role rather than eyeballed.
 
-  --card: hsl(60 2.7% 14.5%);
-  --card-foreground: hsl(48 33.3% 97.1%);
+       Note the elevation direction flips from the old values: upstream the
+       page is the DARKEST surface (gray-950) and cards/popovers sit above it
+       on gray-900. Cards previously went the other way, darker than the page. */
 
-  --popover: hsl(60 2.7% 14.5%);
-  --popover-foreground: hsl(48 33.3% 97.1%);
+    --background: #141413;          /* gray-950 — background-primary   */
+    --foreground: #faf9f5;          /* gray-050 — foreground-primary   */
 
-  --primary: hsl(15 63.1% 59.6%);
-  --primary-foreground: hsl(0 0% 100%);
+    --card: #1a1918;                /* gray-900 — background-secondary */
+    --card-foreground: #faf9f5;     /* gray-050                        */
 
-  --secondary: hsl(30 3.3% 11.8%);
-  --secondary-foreground: hsl(48 33.3% 97.1%);
+    --popover: #1a1918;             /* gray-900 — background-overlay   */
+    --popover-foreground: #faf9f5;  /* gray-050                        */
 
-  --muted: hsl(60 2.6% 7.6%);
-  --muted-foreground: hsl(48 4.8% 59.2%);
+    --primary: #c46849;             /* clay-dark — accent-clay-primary */
+    --primary-foreground: #ffffff;  /* gray-000 — button-clay-fg       */
 
-  --accent: hsl(30 3.3% 11.8%);
-  --accent-foreground: hsl(48 33.3% 97.1%);
+    --secondary: #30302e;           /* gray-750 — button-secondary-bg  */
+    --secondary-foreground: #faf9f5;/* gray-050 — button-secondary-fg  */
 
-  --destructive: hsl(0 67% 59.6%);
+    --muted: #262624;               /* gray-800 — background-tertiary  */
+    --muted-foreground: #b0aea5;    /* gray-400 — foreground-secondary */
 
-  --border: hsl(51 16.5% 84.5% / 10%);
-  --input: hsl(51 16.5% 84.5% / 15%);
-  --ring: hsl(15 63.1% 59.6%);
+    --accent: #262624;              /* gray-800 — button-tertiary-bg   */
+    --accent-foreground: #faf9f5;   /* gray-050 — button-tertiary-fg   */
 
-  --chart-1: hsl(15 63.1% 59.6%);
-  --chart-2: hsl(48 4.8% 59.2%);
-  --chart-3: hsl(50 9% 73.7%);
-  --chart-4: hsl(48 3.4% 29.2%);
-  --chart-5: hsl(60 2.7% 14.5%);
+    /* Upstream's dark-mode danger. The brand's --color-error (#bf4d43) is
+       tuned for light surfaces and only clears ~3:1 on gray-950. */
+    --destructive: #ff5a5a;
 
-  --sidebar: hsl(60 2.7% 14.5%);
-  --sidebar-foreground: hsl(48 33.3% 97.1%);
-  --sidebar-primary: hsl(15 63.1% 59.6%);
-  --sidebar-primary-foreground: hsl(0 0% 100%);
-  --sidebar-accent: hsl(30 3.3% 11.8%);
-  --sidebar-accent-foreground: hsl(48 33.3% 97.1%);
-  --sidebar-border: hsl(51 16.5% 84.5% / 10%);
-  --sidebar-ring: hsl(15 63.1% 59.6%);
+    /* border-secondary rather than border-tertiary (#30302e): shadcn also
+       drives input outlines off --input, and the tertiary step is nearly
+       invisible against a gray-900 card. */
+    --border: #3d3d3a;              /* gray-700 — border-secondary     */
+    --input: #3d3d3a;               /* gray-700                        */
+    --ring: #c6613f;                /* clay-hover — accent-clay-interactive */
+
+    /* Charts are unused here; kept as a coherent ramp off the same scale. */
+    --chart-1: #c46849;             /* clay-dark */
+    --chart-2: #b0aea5;             /* gray-400  */
+    --chart-3: #87867f;             /* gray-500  */
+    --chart-4: #5e5d59;             /* gray-600  */
+    --chart-5: #262624;             /* gray-800  */
+
+    --sidebar: #1a1918;             /* gray-900  */
+    --sidebar-foreground: #faf9f5;
+    --sidebar-primary: #c46849;
+    --sidebar-primary-foreground: #ffffff;
+    --sidebar-accent: #262624;
+    --sidebar-accent-foreground: #faf9f5;
+    --sidebar-border: #3d3d3a;
+    --sidebar-ring: #c6613f;
+  }
 }
 
 @layer base {
