@@ -64,7 +64,7 @@ function TimeAgo({ date }: { date: string }) {
     const schedule = () => {
       setNow(Date.now());
       const age = Date.now() - then;
-      if (age >= 12 * 60 * 60 * 1000) return;
+      if (age >= 2 * 60 * 60 * 1000) return;
       const next = age < 60_000 ? 1000 : 60_000 - (age % 60_000);
       timer = setTimeout(schedule, next);
     };

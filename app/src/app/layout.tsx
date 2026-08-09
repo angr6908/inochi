@@ -42,7 +42,7 @@ export const viewport: Viewport = {
   // stylesheet, so a custom property would resolve to nothing.
   themeColor: [
     { media: "(prefers-color-scheme: light)", color: "#faf9f5" },
-    { media: "(prefers-color-scheme: dark)", color: "#141413" },
+    { media: "(prefers-color-scheme: dark)", color: "#111111" },
   ],
 };
 

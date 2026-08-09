@@ -5,7 +5,7 @@ export function formatTimestamp(dateStr: string, tz: string | undefined, nowMs: 
   const then = new Date(dateStr.replace(" ", "T") + "Z").getTime();
   const diffMs = nowMs - then;
   const diffMin = diffMs / 60000;
-  if (diffMin < 12 * 60) {
+  if (diffMin < 2 * 60) {
     if (diffMin < 1) return Math.max(0, Math.floor(diffMs / 1000)) + "s";
     if (diffMin < 60) return Math.floor(diffMin) + "m";
     return Math.floor(diffMin / 60) + "h";

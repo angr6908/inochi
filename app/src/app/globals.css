@@ -185,7 +185,7 @@
        page is the DARKEST surface (gray-950) and cards/popovers sit above it
        on gray-900. Cards previously went the other way, darker than the page. */
 
-    --background: #141413;          /* gray-950 — background-primary   */
+    --background: #111111;          /* Claude's final painted dark canvas */
     --foreground: #faf9f5;          /* gray-050 — foreground-primary   */
 
     --card: #1a1918;                /* gray-900 — background-secondary */
