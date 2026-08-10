@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type { CSSProperties } from "react";
 import { Play } from "lucide-react";
 import {
   siYoutube, siTwitch, siX, siGithub, siGitlab, siReddit, siVimeo,
@@ -13,6 +14,7 @@ import {
   siHuggingface, siArxiv, siPixiv,
 } from "simple-icons";
 import { LinkPreview } from "@/lib/api";
+import { brandMarkDark } from "@/lib/brand-color";
 import { cn } from "@/lib/utils";
 
 function PreviewThumb({
@@ -365,7 +367,16 @@ const OPTICAL_SCALE: Record<string, number> = {
   X: 0.82,
 };
 
-// A simple-icons path rendered in the brand's own color (no hover transition).
+// A simple-icons path rendered in the brand's own color (no hover transition) —
+// the brand hex as-is on the light card, and on the dark card the variant that
+// reads there, the way the brand itself inverts a black mark (X, niconico,
+// GitHub). Both colors ride along as custom properties, the dark one derived on
+// the server (lib/brand-color); the `dark:` utility — a bare
+// `prefers-color-scheme` media query, the same switch the rest of the theme
+// uses — picks between them in the render-blocking stylesheet. So the choice is
+// made before the first paint (no flash of the light mark on load or refresh,
+// and no hydration mismatch: the HTML carries both), and changing the OS theme
+// repaints it with no JS in the loop.
 function BrandMark({ icon, className }: { icon: BrandIcon; className?: string }) {
   const scale = OPTICAL_SCALE[icon.title] ?? 1;
   return (
@@ -373,8 +384,16 @@ function BrandMark({ icon, className }: { icon: BrandIcon; className?: string })
       role="img"
       viewBox="0 0 24 24"
       aria-label={icon.title}
-      style={{ fill: `#${icon.hex}` }}
-      className={cn("size-3.5 shrink-0", className)}
+      style={
+        {
+          "--brand-mark": `#${icon.hex}`,
+          "--brand-mark-dark": brandMarkDark(icon.hex),
+        } as CSSProperties
+      }
+      className={cn(
+        "size-3.5 shrink-0 fill-(--brand-mark) dark:fill-(--brand-mark-dark)",
+        className,
+      )}
     >
       <title>{icon.title}</title>
       <path
