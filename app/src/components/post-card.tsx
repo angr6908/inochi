@@ -318,7 +318,14 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
             so this collapses with the inner-card wrapper's mt-[9px]; mb-2.5 (10px)
             wins, keeping header→card at 10px to the border (border not counted),
             while the wrapper's 9px only governs content-text→card (border counted). */}
-        <div className="mb-2.5 flex items-center gap-1.5 text-sm">
+        {/* min-h-4 (16px) pins the row height. It is already the height the
+            action buttons give it (h-7 = 28px against the -my-1.5 below), but
+            they don't always render: a logged-out viewer on a post with no
+            echoes gets neither the echo button nor the menu, and the row would
+            then shrink to the 14px username line, lifting everything above the
+            content by 1px. The floor keeps the top spacing identical for every
+            viewer, which is what lets it be matched against the bottom. */}
+        <div className="mb-2.5 flex min-h-4 items-center gap-1.5 text-sm">
           <span className="flex items-center gap-1.5">
             {!hideOwnUsername && (
               <>
@@ -410,13 +417,20 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
         </div>
 
         {/* Content */}
-        {/* The card's bottom padding (p-4 = 16px) is larger than the 10px content
-            gap, so a text-only card's bottom would read roomier than the rest.
-            When the text is the last block, pull it down so the gap to the card
-            edge lands at 10px, matching every other content gap. Scoped to
-            :last-child so it never collapses the spacing when media/reference
-            actually follows. */}
-        <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[6px]">
+        {/* When the text is the last block, its distance to the card's bottom is
+            matched to the header's distance to the card's top — measured to the
+            ink, not to the boxes, because the two ends carry very different
+            amounts of built-in slack. The header is `leading-none`, so its
+            glyphs start ~2px under its box top; a content line is 15px/1.625, so
+            ~7.4px of descent + half-leading sits under its last baseline. Pull
+            the block down by 4px (16px padding - 4 = a 12px box gap) and both
+            ends read the same: 19.1px from the border to the header's cap/digit
+            tops, 19.4px from the last baseline down to the border. Lines ending
+            in a descender come 3.2px closer, which is content-dependent and not
+            worth chasing — spacing for it would leave every other post
+            bottom-heavy. Scoped to :last-child so it never collapses the spacing
+            when media/reference actually follows. */}
+        <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[4px]">
           <PostBody content={post.content} priority={priority} />
         </div>
 
@@ -454,7 +468,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                   <div
                     key={q.id}
                     className={cn(
-                      "relative p-3 transition-colors hover:bg-muted/70",
+                      "relative p-4 transition-colors hover:bg-muted/70",
                       qi > 0 && "border-t border-border/60",
                     )}
                   >
@@ -463,7 +477,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                       aria-label={`View post by ${q.username}`}
                       className="absolute inset-0 z-10"
                     />
-                    <div className="mb-1.5 flex items-center gap-1.5 text-sm">
+                    <div className="mb-2.5 flex min-h-4 items-center gap-1.5 text-sm">
                       {/* Drop the repeated name when this entry shares its author
                           with the one directly above it. */}
                       {!(qi > 0 && quoteChain[qi - 1].username === q.username) && (
@@ -476,7 +490,13 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                         <TimeAgo date={q.created_at} />
                       </span>
                     </div>
-                    <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[2px] [&_a]:relative [&_a]:z-20">
+                    {/* Same spacing as the mother card, one level in: p-4, a
+                        16px header row (min-h-4 — there are no action buttons
+                        here to set it), mb-2.5 under it, and the same -mb-[4px]
+                        pull so the last baseline sits as far off this card's
+                        bottom (or the next entry's divider) as the quoted
+                        header's ink sits below its top. */}
+                    <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[4px] [&_a]:relative [&_a]:z-20">
                       <PostContent content={q.content} />
                     </div>
                     {/* Same rhythm one level deeper: content-text→first-card counts

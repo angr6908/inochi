@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { PostContent } from "./post-content";
 import { POST_CLAMP_LINES, postClampBuckets } from "@/lib/post-clamp";
 import type { CSSProperties } from "react";
@@ -14,25 +14,21 @@ import type { CSSProperties } from "react";
 export function PostBody({ content, priority }: { content: string; priority?: boolean }) {
   const clamp = useMemo(() => postClampBuckets(content), [content]);
   const [expanded, setExpanded] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
 
   // Posts that fit at every width render exactly as before — no wrapper, no
   // toggle, nothing to clip.
   if (!clamp) return <PostContent content={content} priority={priority} />;
 
-  const toggle = () => {
-    // Collapsing a post whose top has scrolled off pulls the page out from under
-    // the reader; bring the post back first (scroll-mt-20 clears the nav bar).
-    if (expanded && (ref.current?.getBoundingClientRect().top ?? 0) < 80) {
-      ref.current?.scrollIntoView({ behavior: "instant", block: "start" });
-    }
-    setExpanded((v) => !v);
-  };
+  // Toggling never moves the page. Collapsing removes text that sits above the
+  // toggle, so the browser's own scroll anchoring absorbs it and whatever you
+  // were looking at — the button under the cursor included — stays put. An
+  // explicit scroll here (this used to re-anchor the post's top under the nav)
+  // would be a jump the reader didn't ask for.
+  const toggle = () => setExpanded((v) => !v);
 
   return (
     <div
-      ref={ref}
-      className="post-clamp scroll-mt-20"
+      className="post-clamp"
       data-clamp={clamp}
       data-expanded={expanded ? "" : undefined}
       style={{ "--post-clamp-lines": POST_CLAMP_LINES } as CSSProperties}
@@ -40,15 +36,17 @@ export function PostBody({ content, priority }: { content: string; priority?: bo
       <div className="post-clamp-body">
         <PostContent content={content} priority={priority} />
       </div>
-      {/* Deliberately inherits the content's size and leading: its line box then
-          matches a line of post text, so the card's bottom spacing (the
-          `[&:last-child]:-mb-[6px]` pull on the wrapper) lands where it does for
-          a text-only card. */}
+      {/* text-sm to match the post's other affordances — the Echo/Edit/Delete
+          items in the actions menu — rather than the post text it sits under.
+          leading-6 (24px) rather than the 21px text-sm pairs with: that keeps
+          the line box a hair off one content line (24.375px), so the card's
+          bottom spacing (the `[&:last-child]:-mb-[4px]` pull on the wrapper)
+          lands where it does for a text-only card. */}
       <button
         type="button"
         onClick={toggle}
         aria-expanded={expanded}
-        className="post-clamp-toggle mt-1 font-sans font-medium text-primary hover:underline"
+        className="post-clamp-toggle mt-1 font-sans text-sm leading-6 font-medium text-primary hover:underline"
       >
         {expanded ? "Show less" : "Show more"}
       </button>
