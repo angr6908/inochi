@@ -109,13 +109,15 @@ interface PostCardProps {
   onUpdate?: () => void;
   /** Hide the quoted parent post (e.g. on a post's own page, where the parent is already shown). */
   hideParent?: boolean;
-  /** When the quoted parent is hidden because it's the same author's own earlier
-   *  post elsewhere on the page (not the adjacent card), show a compact reference
-   *  that scrolls to it (via onJumpToPost), so the echo stays legible without
-   *  repeating the quoted content. Its created_at gives the gap since that post. */
-  parentLink?: { id: string; created_at: string };
-  /** Scroll to and highlight another post already on the page (the echoed
-   *  original) instead of navigating away. Given by the feed. */
+  /** When the quoted parent is hidden because it's already elsewhere in the feed
+   *  (not the adjacent card), show a compact reference that jumps to it (via
+   *  onJumpToPost), so the echo stays legible without repeating the quoted
+   *  content. Its created_at gives the gap since that post; `username` is set
+   *  only when that post is someone else's, and names them in the line. */
+  parentLink?: { id: string; created_at: string; username?: string };
+  /** Scroll to and highlight another post the feed has in hand (the echoed
+   *  original) instead of navigating away — turning the page first when it lives
+   *  on another one. Given by the feed. */
   onJumpToPost?: (id: string) => void;
   /** Hide the author name (e.g. in a single-author thread where it's redundant). */
   hideUsername?: boolean;
@@ -136,13 +138,9 @@ interface PostCardProps {
   /** Also offer the echo action inside the actions menu (feed views). Only takes
    *  effect for logged-in viewers, who always get it there. */
   echoInMenu?: boolean;
-  /** Quote only the immediate parent rather than the whole ancestor thread — used
-   *  when the rest of the thread continues onto the next page, so a neighbor that
-   *  was merely split by pagination isn't expanded. */
-  quoteParentOnly?: boolean;
 }
 
-export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost, hideUsername, onEcho, onDelete, className, priority, echoVisible = true, echoInMenu, quoteParentOnly }: PostCardProps) {
+export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost, hideUsername, onEcho, onDelete, className, priority, echoVisible = true, echoInMenu }: PostCardProps) {
   const { user } = useAuth();
   const router = useRouter();
   const isOwner = user?.id === post.user_id;
@@ -154,7 +152,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
   // The quoted thread above this reply: the whole ancestor chain (root-first) when
   // available, else just the immediate parent — rendered as one merged quote.
   const quoteChain =
-    !quoteParentOnly && post.ancestors && post.ancestors.length > 0
+    post.ancestors && post.ancestors.length > 0
       ? post.ancestors
       : post.parent_post
         ? [post.parent_post]
@@ -518,20 +516,22 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
           </div>
         )}
 
-        {/* Compact echo reference — shown when the quoted parent is the same
-            author's own earlier post elsewhere on the page (not the adjacent card).
-            Scrolls to it and notes how long after it this post was made, so the
+        {/* Compact echo reference — shown when the quoted parent is already
+            elsewhere in the feed (further down this page or on another loaded
+            one), not the adjacent card. Jumps to it, naming its author when it
+            isn't this one, and notes how long after it this post was made, so the
             echo stays legible without repeating the content. */}
         {parentLink && !showReference && (
           <button
             type="button"
             onClick={() => onJumpToPost?.(parentLink.id)}
-            aria-label="Scroll to the echoed post"
+            aria-label="Jump to the echoed post"
             className="mt-3.5 inline-flex w-fit items-center gap-1.5 text-sm leading-none text-muted-foreground transition-colors hover:text-foreground"
           >
             <Reply className="size-3.5 shrink-0" />
             <span className="leading-none">
-              Echoing a post after {formatGap(parentLink.created_at, post.created_at)}
+              Echoing a post{parentLink.username ? ` from ${parentLink.username}` : ""} after{" "}
+              {formatGap(parentLink.created_at, post.created_at)}
             </span>
           </button>
         )}

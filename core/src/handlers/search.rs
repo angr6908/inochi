@@ -4,7 +4,9 @@ use axum::{
 };
 
 use crate::db::{Db, DbExt};
-use crate::handlers::posts::{posts_page, query_ids, thread_cte, thread_ordered_select};
+use crate::handlers::posts::{
+    posts_page, query_id_roots, thread_cte, thread_ordered_select, thread_safe_page,
+};
 use crate::models::*;
 
 /// Each term adds a correlated EXISTS subquery over every post, so the work
@@ -61,7 +63,6 @@ pub async fn search_posts(
 
     let page = query.page.unwrap_or(1).max(1);
     let limit = query.limit.unwrap_or(20).min(100);
-    let offset = (page - 1) * limit;
     let patterns = q
         .split_whitespace()
         .take(MAX_TERMS)
@@ -78,14 +79,6 @@ pub async fn search_posts(
     let matched = matched_posts_sql(patterns.len());
     let cte = thread_cte(&matched);
 
-    let total: i64 = conn
-        .query_row(
-            &format!("{cte} SELECT COUNT(*) FROM thread"),
-            rusqlite::params_from_iter(patterns.iter()),
-            |r| r.get(0),
-        )
-        .unwrap_or(0);
-
     let matches: i64 = conn
         .query_row(
             &format!("SELECT COUNT(*) FROM ({matched})"),
@@ -94,13 +87,18 @@ pub async fn search_posts(
         )
         .unwrap_or(0);
 
-    let post_ids = query_ids(
+    // The full ordering rather than one page of it, and the row count in place
+    // of the COUNT(*) it replaces: page breaks are placed over the whole list so
+    // that none falls inside a thread.
+    let rows = query_id_roots(
         &conn,
-        &thread_ordered_select(&cte, limit, offset),
+        &thread_ordered_select(&cte),
         rusqlite::params_from_iter(patterns.iter()),
     );
+    let total = rows.len() as i64;
+    let (post_ids, pages) = thread_safe_page(&rows, page, limit);
 
-    let mut resp = posts_page(&conn, &post_ids, total, page, limit);
+    let mut resp = posts_page(&conn, &post_ids, total, page, pages);
     resp.matches = Some(matches);
     Ok(Json(resp))
 }

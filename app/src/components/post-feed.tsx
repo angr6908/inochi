@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useState } from "react";
 import { Post } from "@/lib/api";
 import { PostCard } from "./post-card";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,14 @@ import { cn } from "@/lib/utils";
 interface PostFeedProps {
   posts: Post[];
   onUpdate: () => void;
+  /** Which loaded page of the same feed holds a given post. Lets an echo whose
+   *  original sits on another page point at it instead of quoting it again. */
+  pageOfPost?: (id: string) => number | undefined;
+  /** Turn to another page and focus a post there (see `pageOfPost`). */
+  onJumpToPage?: (page: number, id: string) => void;
+  /** A post on this page to scroll to and highlight — set by the parent when the
+   *  reader arrives here from another page. Every jump passes a new object. */
+  focus?: { id: string } | null;
 }
 
 const CUSTOM_EMOJI = /:[a-z0-9_]*[a-z_][a-z0-9_]*:/i;
@@ -21,27 +29,54 @@ function hasMedia(p: Post): boolean {
 }
 
 // Posts are rendered in the order given (time order). No post's content is ever
-// shown twice: when an echo's original is also on the page we drop the echo's
-// inline quote of it. If the original is the adjacent card it already reads as a
-// joined thread; if it's elsewhere on the page the echo instead gets a compact
-// reference (see `parentLink`) that scrolls to it, so the connection stays clear
+// shown twice: whoever wrote it, when an echo's original is also in the feed we
+// drop the echo's inline quote of it. If the original is the adjacent card it
+// already reads as a joined thread; if it's elsewhere in the feed — further down
+// this page, or on another loaded page — the echo instead gets a compact
+// reference (see `parentLink`) that jumps to it, so the connection stays clear
 // without repeating the content or disturbing the time order.
-export function PostFeed({ posts, onUpdate }: PostFeedProps) {
+export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus }: PostFeedProps) {
   const idsOnPage = new Set(posts.map((p) => p.id));
   const priorityIndex = posts.findIndex(hasMedia);
 
-  // Clicking an echo's reference scrolls to the echoed original (already on the
-  // page) and briefly highlights it — same treatment as the thread page — rather
-  // than navigating away. The highlight clears after a moment.
+  // Clicking an echo's reference scrolls to the echoed original and briefly
+  // highlights it — same treatment as the thread page — rather than navigating
+  // away. The highlight clears after a moment.
   const [highlightId, setHighlightId] = useState<string | null>(null);
   useEffect(() => {
     if (!highlightId) return;
     const t = setTimeout(() => setHighlightId(null), 1800);
     return () => clearTimeout(t);
   }, [highlightId]);
-  const jumpToPost = (id: string) => {
-    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" });
+
+  // Centre a post on this page and highlight it. A same-page jump glides; an
+  // arrival from another page lands instantly, since every card under the
+  // viewport has just been replaced and there is nothing to glide over. The
+  // instant landing re-pins on the next frame, once layout has settled.
+  const focusPost = useCallback((id: string, smooth: boolean) => {
+    const scroll = () =>
+      document.getElementById(id)?.scrollIntoView({
+        behavior: smooth ? "smooth" : "instant",
+        block: "center",
+      });
+    scroll();
+    if (!smooth) requestAnimationFrame(scroll);
     setHighlightId(id);
+  }, []);
+
+  // A fresh `focus` object means the reader just arrived from another page.
+  // Before paint, so the new page is never shown at the old scroll offset first.
+  useLayoutEffect(() => {
+    if (focus) focusPost(focus.id, false);
+  }, [focus, focusPost]);
+
+  const jumpToPost = (id: string) => {
+    if (idsOnPage.has(id)) {
+      focusPost(id, true);
+      return;
+    }
+    const p = pageOfPost?.(id);
+    if (p !== undefined) onJumpToPage?.(p, id);
   };
 
   const targetIdx = highlightId ? posts.findIndex((p) => p.id === highlightId) : -1;
@@ -66,19 +101,26 @@ export function PostFeed({ posts, onUpdate }: PostFeedProps) {
         const parentOnPage = !!(parent && idsOnPage.has(parent.id));
         const parentAdjacent =
           !!parent && (parent.id === next?.id || parent.id === prev?.id);
-        // Only deduplicate a self-echo: when a post echoes the same author's own
-        // earlier post that's also on the page, the surrounding cards already give
-        // the context, so we don't repeat it. A cross-author echo keeps its full
-        // quote for context even if the quoted post happens to be on the page.
-        const sameAuthor = !!parent && parent.username === post.username;
-        // Drop the inline quote when the original is the adjacent card (it reads as
-        // a joined thread) or when it's the same author elsewhere on the page.
-        const hideParent = parentAdjacent || (parentOnPage && sameAuthor);
-        // Same author, on the page but not the neighbouring card: a slim link keeps
-        // the echo legible without repeating the quote or reordering the feed.
+        // The echoed original on another loaded page (typically the next one,
+        // where pagination split the thread): still reachable, so it counts as
+        // being in the feed — clicking the reference turns to that page.
+        const parentPage = parent && !parentOnPage ? pageOfPost?.(parent.id) : undefined;
+        const parentInFeed = parentOnPage || parentPage !== undefined;
+        // Drop the inline quote whenever the original is in the feed: as the
+        // adjacent card it reads as a joined thread, and anywhere else the
+        // reference below stands in for it.
+        const hideParent = parentAdjacent || parentInFeed;
+        // In the feed but not the neighbouring card: a slim link keeps the echo
+        // legible without repeating the quote or reordering the feed. It names
+        // the author when the echo answers someone else, since the two cards can
+        // sit far apart.
         const parentLink =
-          parentOnPage && !parentAdjacent && sameAuthor && parent
-            ? { id: parent.id, created_at: parent.created_at }
+          parent && parentInFeed && !parentAdjacent
+            ? {
+                id: parent.id,
+                created_at: parent.created_at,
+                username: parent.username === post.username ? undefined : parent.username,
+              }
             : undefined;
         const echoIsNeighbor = continuesPrev;
         // In feeds the echo button is only a way into a post's existing thread,
@@ -96,7 +138,6 @@ export function PostFeed({ posts, onUpdate }: PostFeedProps) {
             parentLink={parentLink}
             onJumpToPost={jumpToPost}
             hideUsername={sameAuthorAsNext}
-            quoteParentOnly={i === posts.length - 1}
             onUpdate={onUpdate}
             className={cn(
               sameThreadAsNext ? "mb-0" : "mb-4",

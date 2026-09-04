@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, useCallback } from "react";
+import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { getPosts, loadEmojis, Post } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
@@ -57,7 +57,12 @@ function withPage(prev: Map<number, Post[]>, p: number, posts: Post[]): Map<numb
   return m;
 }
 
-function prefetchNeighbors(page: number, tag: string | undefined, pages: number) {
+function prefetchNeighbors(
+  page: number,
+  tag: string | undefined,
+  pages: number,
+  onCached?: () => void,
+) {
   for (const p of [page + 1, page - 1]) {
     if (p < 1 || p > pages || pageCache.has(cacheKey(tag, p))) continue;
     getPosts(p, 20, tag)
@@ -65,6 +70,7 @@ function prefetchNeighbors(page: number, tag: string | undefined, pages: number)
         pageCache.set(cacheKey(tag, r.page), { posts: r.posts, pages: r.pages, total: r.total });
         preloadPostFonts(r.posts);
         preloadImages(pageImageUrls(r.posts));
+        onCached?.();
       })
       .catch(() => {});
   }
@@ -105,6 +111,26 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     setTotal(pageCache.get(cacheKey(tagParam, 1))?.total ?? 0);
   }
 
+  // Pages land in `pageCache` outside of React (the background prefetch of the
+  // neighbouring pages), which on its own would never re-render; bumping this
+  // re-derives `pageOfPost` as they arrive.
+  const [cacheVersion, bumpCache] = useReducer((n: number) => n + 1, 0);
+
+  // Where every post the feed has in hand lives, so an echo whose original sits
+  // on another page can link to it instead of quoting it again.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `cacheVersion` re-derives the index as pages land
+  const pageOfPost = useMemo(() => {
+    const at = new Map<string, number>();
+    for (let p = 1; p <= pages; p++)
+      for (const post of pageCache.get(cacheKey(activeTag, p))?.posts ?? []) at.set(post.id, p);
+    return (id: string) => at.get(id);
+  }, [activeTag, pages, cacheVersion]);
+
+  // The post to scroll to and highlight after turning to another page (set when
+  // an echo's reference points off this page). A fresh object per jump, so the
+  // same target twice in a row still moves.
+  const [focus, setFocus] = useState<{ page: number; id: string } | null>(null);
+
   const reqRef = useRef(0);
 
   useEffect(() => {
@@ -138,7 +164,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       setPage(p);
       setLoading(false);
       homeCache = { tag, posts: cached.posts, page: p, pages: cached.pages, total: cached.total };
-      prefetchNeighbors(p, tag, cached.pages);
+      prefetchNeighbors(p, tag, cached.pages, bumpCache);
       return;
     }
     setLoading(true);
@@ -149,6 +175,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       const [postsRes] = await Promise.all([getPosts(p, 20, tag), loadEmojis()]);
       if (myReq !== reqRef.current) return;
       pageCache.set(cacheKey(tag, postsRes.page), { posts: postsRes.posts, pages: postsRes.pages, total: postsRes.total });
+      bumpCache();
       setLoadedPages((prev) => withPage(prev, postsRes.page, postsRes.posts));
       setPages(postsRes.pages);
       setTotal(postsRes.total);
@@ -160,7 +187,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
         pages: postsRes.pages,
         total: postsRes.total,
       };
-      prefetchNeighbors(postsRes.page, tag, postsRes.pages);
+      prefetchNeighbors(postsRes.page, tag, postsRes.pages, bumpCache);
     } catch {
       // ignore
     } finally {
@@ -170,6 +197,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
 
   const resetPages = useCallback(() => {
     clearPageCache();
+    bumpCache();
     setLoadedPages(new Map());
   }, []);
 
@@ -180,7 +208,8 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     pageCache.set(cacheKey(tagParam, seedServer.page), { posts: seedServer.posts, pages: seedServer.pages, total: seedServer.total });
     homeCache = { tag: tagParam, posts: seedServer.posts, page: seedServer.page, pages: seedServer.pages, total: seedServer.total };
     loadEmojis();
-    prefetchNeighbors(seedServer.page, tagParam, seedServer.pages);
+    prefetchNeighbors(seedServer.page, tagParam, seedServer.pages, bumpCache);
+    bumpCache();
   }, [snap, seedServer, tagParam]);
 
   useLayoutEffect(() => {
@@ -188,6 +217,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       homeCache = null;
       homeScrollY = 0;
       clearPageCache();
+      bumpCache();
       scrollToTop();
       return;
     }
@@ -195,7 +225,8 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       const snapshot = homeCache;
       window.scrollTo({ top: homeScrollY, behavior: "instant" });
       pageCache.set(cacheKey(snapshot.tag, snapshot.page), { posts: snapshot.posts, pages: snapshot.pages, total: snapshot.total });
-      prefetchNeighbors(snapshot.page, snapshot.tag, snapshot.pages);
+      bumpCache();
+      prefetchNeighbors(snapshot.page, snapshot.tag, snapshot.pages, bumpCache);
       return;
     }
     scrollToTop();
@@ -233,16 +264,19 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     return () => window.removeEventListener("home:reset", reset);
   }, [load]);
 
-  const changePage = (n: number) => {
+  // `focusId` turns the page to land on a specific post (an echo's original on
+  // another page) rather than at the top.
+  const changePage = (n: number, focusId?: string) => {
     if (loadedPages.has(n)) {
       setLoadedPages((prev) => withPage(prev, n, prev.get(n)!));
       setPage(n);
       homeCache = { tag: activeTag, posts: loadedPages.get(n)!, page: n, pages, total };
-      prefetchNeighbors(n, activeTag, pages);
+      prefetchNeighbors(n, activeTag, pages, bumpCache);
     } else {
       load(n, activeTag);
     }
-    scrollToTop();
+    setFocus(focusId ? { page: n, id: focusId } : null);
+    if (!focusId) scrollToTop();
   };
 
   const reloadCurrent = () => { resetPages(); load(page, activeTag); };
@@ -274,7 +308,13 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
         <>
           {[...loadedPages].map(([pn, pp]) => (
             <div key={pn} hidden={pn !== page}>
-              <PostFeed posts={pp} onUpdate={reloadCurrent} />
+              <PostFeed
+                posts={pp}
+                onUpdate={reloadCurrent}
+                pageOfPost={pageOfPost}
+                onJumpToPage={changePage}
+                focus={focus?.page === pn ? focus : null}
+              />
             </div>
           ))}
           <PostPagination page={page} pages={pages} onChange={changePage} />

@@ -80,17 +80,72 @@ pub(crate) fn thread_cte(matched_sql: &str) -> String {
     )
 }
 
-pub(crate) fn thread_ordered_select(cte: &str, limit: u32, offset: u32) -> String {
+/// The whole matched feed as `(post id, thread root)`, threads kept together and
+/// ordered by their latest activity. Unpaged on purpose: `thread_safe_page`
+/// places the page breaks, and it needs the full ordering to do it.
+pub(crate) fn thread_ordered_select(cte: &str) -> String {
     format!(
         "{cte}
-         SELECT p.id FROM thread th
+         SELECT p.id, th.root FROM thread th
          JOIN posts p ON p.id = th.id
          JOIN (SELECT t2.root AS root, MAX(p2.created_at) AS last_at
                FROM thread t2 JOIN posts p2 ON p2.id = t2.id GROUP BY t2.root) tr
            ON tr.root = th.root
-         ORDER BY tr.last_at DESC, th.root, p.created_at DESC
-         LIMIT {limit} OFFSET {offset}"
+         ORDER BY tr.last_at DESC, th.root, p.created_at DESC"
     )
+}
+
+/// The untagged timeline as `(post id, thread root)`, newest first. The root is
+/// the same one `build_post` reports, so a run of consecutive rows sharing it is
+/// exactly what the feed draws as one joined stack of cards.
+const TIMELINE_ID_ROOTS: &str = "
+    WITH RECURSIVE thread(id, root) AS (
+      SELECT id, id FROM posts WHERE parent_post_id IS NULL
+      UNION
+      SELECT p.id, t.root FROM posts p JOIN thread t ON p.parent_post_id = t.id
+    )
+    SELECT p.id, t.root FROM posts p JOIN thread t ON t.id = p.id
+    ORDER BY p.created_at DESC";
+
+pub(crate) fn query_id_roots<P: rusqlite::Params>(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    params: P,
+) -> Vec<(String, String)> {
+    query_rows(conn, sql, params, |r| Ok((r.get(0)?, r.get(1)?)))
+}
+
+/// Cut `rows` into pages of `limit` and return the ids on `page` (1-based) along
+/// with the page count.
+///
+/// A page never ends in the middle of a thread. Consecutive rows sharing a root
+/// are drawn as one joined stack of cards, so a break through the middle of a
+/// run would tear that stack in half across two pages; a page that would cut
+/// inside one instead keeps taking rows until the run ends. Every break after
+/// the first therefore depends on the ones before it, which is why this walks
+/// the whole ordering rather than trusting SQL's LIMIT/OFFSET. A page grows by
+/// at most the length of the run it swallows.
+pub(crate) fn thread_safe_page(
+    rows: &[(String, String)],
+    page: u32,
+    limit: u32,
+) -> (Vec<String>, u32) {
+    let limit = limit.max(1) as usize;
+    let mut ids = Vec::new();
+    let mut pages = 0u32;
+    let mut start = 0usize;
+    while start < rows.len() {
+        let mut end = (start + limit).min(rows.len());
+        while end < rows.len() && rows[end].1 == rows[end - 1].1 {
+            end += 1;
+        }
+        pages += 1;
+        if pages == page {
+            ids = rows[start..end].iter().map(|(id, _)| id.clone()).collect();
+        }
+        start = end;
+    }
+    (ids, pages)
 }
 
 fn check_post_owner(
@@ -397,16 +452,17 @@ fn build_post_inner(
 }
 
 /// Hydrate a page of post ids into full posts (skipping any that vanished) and
-/// assemble the list response. Shared by the timeline and search.
+/// assemble the list response. Shared by the timeline and search. `pages` comes
+/// from `thread_safe_page` rather than from `total / limit`, since pages hold a
+/// whole number of threads and so vary in size.
 pub fn posts_page(
     conn: &rusqlite::Connection,
     ids: &[String],
     total: i64,
     page: u32,
-    limit: u32,
+    pages: u32,
 ) -> PostsListResponse {
     let posts = ids.iter().filter_map(|id| build_post(conn, id)).collect();
-    let pages = ((total as f64) / (limit as f64)).ceil() as u32;
     PostsListResponse {
         posts,
         total,
@@ -422,40 +478,31 @@ pub async fn list_posts(
 ) -> Result<Json<PostsListResponse>, ApiError> {
     let page = query.page.unwrap_or(1).max(1);
     let limit = query.limit.unwrap_or(20).min(100);
-    let offset = (page - 1) * limit;
 
     let conn = db.conn();
 
-    // An empty `params` slice (no tag filter) is handled by `params_from_iter`
-    // just like a non-empty one, so both queries take the same path.
-    let (count_sql, list_sql, params): (String, String, Vec<Box<dyn rusqlite::types::ToSql>>) =
+    // The whole ordering, not one page of it: page breaks have to dodge threads
+    // (see `thread_safe_page`), so where they fall can't be expressed as an
+    // OFFSET. An empty `params` slice (no tag filter) is handled by
+    // `params_from_iter` just like a non-empty one, so both take the same path.
+    let (list_sql, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) =
         if let Some(ref tag) = query.tag {
             let cte = thread_cte(
                 "SELECT p.id FROM posts p JOIN post_tags pt ON p.id = pt.post_id WHERE pt.tag = ?1",
             );
             (
-                format!("{cte} SELECT COUNT(*) FROM thread"),
-                thread_ordered_select(&cte, limit, offset),
+                thread_ordered_select(&cte),
                 vec![Box::new(tag.to_lowercase())],
             )
         } else {
-            (
-                "SELECT COUNT(*) FROM posts".into(),
-                format!(
-                    "SELECT id FROM posts ORDER BY created_at DESC LIMIT {} OFFSET {}",
-                    limit, offset
-                ),
-                vec![],
-            )
+            (TIMELINE_ID_ROOTS.into(), vec![])
         };
 
-    let total: i64 = conn
-        .query_row(&count_sql, rusqlite::params_from_iter(&params), |r| r.get(0))
-        .unwrap_or(0);
+    let rows = query_id_roots(&conn, &list_sql, rusqlite::params_from_iter(&params));
+    let total = rows.len() as i64;
+    let (post_ids, pages) = thread_safe_page(&rows, page, limit);
 
-    let post_ids = query_ids(&conn, &list_sql, rusqlite::params_from_iter(&params));
-
-    Ok(Json(posts_page(&conn, &post_ids, total, page, limit)))
+    Ok(Json(posts_page(&conn, &post_ids, total, page, pages)))
 }
 
 struct SavedImage {
