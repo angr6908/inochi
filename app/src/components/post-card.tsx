@@ -553,7 +553,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
                   rows={5}
-                  className="max-h-[45dvh] font-content leading-relaxed placeholder:font-sans"
+                  className="max-h-[45dvh] max-w-full overflow-x-hidden font-content leading-relaxed [overflow-wrap:anywhere] placeholder:font-sans"
                 />
 
                 {/* Image controls: reorder/remove existing or newly-added
@@ -590,12 +590,12 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                     unlink it into an independent post. */}
                 <div className="flex flex-col gap-2">
                   {parentSummary ? (
-                    <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/40 p-2.5">
+                    <div className="flex min-w-0 max-w-full flex-col gap-2 rounded-lg border border-border/60 bg-muted/40 p-2.5 sm:flex-row sm:items-start">
                       <div className="min-w-0 flex-1">
-                        <div className="text-xs text-muted-foreground">
+                        <div className="break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
                           Echo of <span className="font-medium text-foreground">{parentSummary.username}</span>
                         </div>
-                        <div className="mt-0.5 line-clamp-2 font-content text-sm leading-snug">
+                        <div className="mt-0.5 line-clamp-2 break-words font-content text-sm leading-snug [overflow-wrap:anywhere]">
                           {parentSummary.content || "(no text)"}
                         </div>
                       </div>
@@ -604,7 +604,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                         size="sm"
                         type="button"
                         onClick={handleUnlinkParent}
-                        className="h-7 shrink-0 gap-1 px-2 text-muted-foreground hover:text-foreground"
+                        className="h-7 shrink-0 self-start gap-1 px-2 text-muted-foreground hover:text-foreground"
                       >
                         <Link2Off className="size-4" />
                         Make independent

@@ -95,9 +95,9 @@ pub(crate) fn thread_ordered_select(cte: &str) -> String {
     )
 }
 
-/// The untagged timeline as `(post id, thread root)`, newest first. The root is
-/// the same one `build_post` reports, so a run of consecutive rows sharing it is
-/// exactly what the feed draws as one joined stack of cards.
+/// The untagged timeline as `(post id, thread root)`, globally newest first.
+/// Preserve this ordering when paging: echoing a post must not pull the older
+/// cards in its thread onto the newest page.
 const TIMELINE_ID_ROOTS: &str = "
     WITH RECURSIVE thread(id, root) AS (
       SELECT id, id FROM posts WHERE parent_post_id IS NULL
@@ -146,6 +146,36 @@ pub(crate) fn thread_safe_page(
         start = end;
     }
     (ids, pages)
+}
+
+/// Locate referenced posts on the pages the client would prefetch. This walks
+/// the already-materialized ordering and does not change any page boundary.
+pub(crate) fn neighboring_post_pages(
+    rows: &[(String, String)],
+    page: u32,
+    limit: u32,
+    target_ids: &std::collections::HashSet<&str>,
+) -> std::collections::HashMap<String, u32> {
+    let limit = limit.max(1) as usize;
+    let mut locations = std::collections::HashMap::new();
+    let mut current_page = 0u32;
+    let mut start = 0usize;
+    while start < rows.len() {
+        let mut end = (start + limit).min(rows.len());
+        while end < rows.len() && rows[end].1 == rows[end - 1].1 {
+            end += 1;
+        }
+        current_page += 1;
+        if current_page.abs_diff(page) == 1 {
+            for (id, _) in &rows[start..end] {
+                if target_ids.contains(id.as_str()) {
+                    locations.insert(id.clone(), current_page);
+                }
+            }
+        }
+        start = end;
+    }
+    locations
 }
 
 fn check_post_owner(
@@ -468,6 +498,7 @@ pub fn posts_page(
         total,
         page,
         pages,
+        post_pages: std::collections::HashMap::new(),
         matches: None,
     }
 }
@@ -502,7 +533,15 @@ pub async fn list_posts(
     let total = rows.len() as i64;
     let (post_ids, pages) = thread_safe_page(&rows, page, limit);
 
-    Ok(Json(posts_page(&conn, &post_ids, total, page, pages)))
+    let mut response = posts_page(&conn, &post_ids, total, page, pages);
+    let parent_ids = response
+        .posts
+        .iter()
+        .filter_map(|post| post.parent_post_id.as_deref())
+        .collect();
+    response.post_pages = neighboring_post_pages(&rows, page, limit, &parent_ids);
+
+    Ok(Json(response))
 }
 
 struct SavedImage {
@@ -978,4 +1017,49 @@ pub async fn delete_post(
     Ok(Json(MessageResponse {
         message: "Post deleted".into(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{neighboring_post_pages, query_id_roots, thread_safe_page, TIMELINE_ID_ROOTS};
+
+    #[test]
+    fn timeline_preserves_global_chronological_order() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE posts (
+                id TEXT PRIMARY KEY,
+                parent_post_id TEXT,
+                created_at TEXT NOT NULL
+             );
+             CREATE INDEX idx_posts_parent_created
+                ON posts(parent_post_id, created_at DESC);
+             INSERT INTO posts VALUES
+                ('a',  NULL, '2026-01-01 00:00:00'),
+                ('b',  NULL, '2026-01-02 00:00:00'),
+                ('a1', 'a',  '2026-01-04 00:00:00'),
+                ('b1', 'b',  '2026-01-03 00:00:00'),
+                ('c',  NULL, '2025-12-01 00:00:00');",
+        )
+        .unwrap();
+
+        let rows = query_id_roots(&conn, TIMELINE_ID_ROOTS, []);
+        assert_eq!(
+            rows,
+            vec![
+                ("a1".into(), "a".into()),
+                ("b1".into(), "b".into()),
+                ("b".into(), "b".into()),
+                ("a".into(), "a".into()),
+                ("c".into(), "c".into()),
+            ]
+        );
+
+        let (first_page, pages) = thread_safe_page(&rows, 1, 2);
+        assert_eq!(first_page, vec!["a1", "b1", "b"]);
+        assert_eq!(pages, 2);
+
+        let targets = std::collections::HashSet::from(["a"]);
+        assert_eq!(neighboring_post_pages(&rows, 1, 2, &targets).get("a"), Some(&2));
+    }
 }

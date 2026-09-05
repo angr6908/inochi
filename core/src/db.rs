@@ -97,6 +97,23 @@ pub fn init_db() -> Db {
             uploaded_by TEXT NOT NULL REFERENCES users(id),
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        -- SQLite does not automatically index foreign-key columns. These cover
+        -- timeline/thread traversal and the per-post hydration queries used by
+        -- every feed response. IF NOT EXISTS also upgrades existing databases.
+        CREATE INDEX IF NOT EXISTS idx_posts_parent_created
+            ON posts(parent_post_id, created_at DESC);
+        -- The recursive timeline sorts a materialized result and cannot use a
+        -- standalone created_at index; remove it if an earlier build added it.
+        DROP INDEX IF EXISTS idx_posts_created;
+        CREATE INDEX IF NOT EXISTS idx_post_tags_tag_post
+            ON post_tags(tag, post_id);
+        CREATE INDEX IF NOT EXISTS idx_post_images_post_position
+            ON post_images(post_id, position);
+        CREATE INDEX IF NOT EXISTS idx_post_links_preview
+            ON post_links(link_preview_id);
+        CREATE INDEX IF NOT EXISTS idx_preview_images_preview_position
+            ON link_preview_images(link_preview_id, position);
         ",
     )
     .expect("Failed to create tables");

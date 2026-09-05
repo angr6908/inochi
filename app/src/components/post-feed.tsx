@@ -1,9 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Post } from "@/lib/api";
-import { PostCard } from "./post-card";
 import { cn } from "@/lib/utils";
+import { PostCard } from "./post-card";
 
 interface PostFeedProps {
   posts: Post[];
@@ -36,6 +36,7 @@ function hasMedia(p: Post): boolean {
 // reference (see `parentLink`) that jumps to it, so the connection stays clear
 // without repeating the content or disturbing the time order.
 export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus }: PostFeedProps) {
+  const feedRef = useRef<HTMLDivElement>(null);
   const idsOnPage = new Set(posts.map((p) => p.id));
   const priorityIndex = posts.findIndex(hasMedia);
 
@@ -67,7 +68,18 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus }: P
   // A fresh `focus` object means the reader just arrived from another page.
   // Before paint, so the new page is never shown at the old scroll offset first.
   useLayoutEffect(() => {
-    if (focus) focusPost(focus.id, false);
+    if (!focus) return;
+    focusPost(focus.id, false);
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const animation = feedRef.current?.animate(
+      [
+        { opacity: 0.72, transform: "translateY(10px)" },
+        { opacity: 1, transform: "translateY(0)" },
+      ],
+      { duration: 320, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
+    );
+    return () => animation?.cancel();
   }, [focus, focusPost]);
 
   const jumpToPost = (id: string) => {
@@ -89,7 +101,7 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus }: P
     posts[targetIdx + 1].root_post_id === posts[targetIdx].root_post_id;
 
   return (
-    <div>
+    <div ref={feedRef}>
       {posts.map((post, i) => {
         const next = posts[i + 1];
         const prev = posts[i - 1];

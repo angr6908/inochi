@@ -1,33 +1,34 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
-import { getPosts, loadEmojis, Post } from "@/lib/api";
-import { useAuth } from "@/lib/auth-context";
-import { consumeHomeLogoReset } from "@/lib/home-reset";
-import { useTitle } from "@/lib/use-title";
-import { PostFeed } from "@/components/post-feed";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PostEditor } from "@/components/post-editor";
+import { PostFeed } from "@/components/post-feed";
 import { PostListSkeleton } from "@/components/post-list-skeleton";
 import { PostPagination } from "@/components/post-pagination";
+import { getPosts, loadEmojis, Post } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
+import { postFontsReady, preloadPostFonts } from "@/lib/font-preload";
+import { consumeHomeLogoReset } from "@/lib/home-reset";
 import { preloadImages } from "@/lib/image-loader";
 import { pageImageUrls } from "@/lib/post-media";
-import { preloadPostFonts, postFontsReady } from "@/lib/font-preload";
 import { scrollToTop } from "@/lib/scroll";
+import { useTitle } from "@/lib/use-title";
 
-export interface InitialPage {
+interface CachedPage {
   posts: Post[];
-  page: number;
   pages: number;
   total: number;
+  post_pages?: Record<string, number>;
 }
 
-interface HomeCache {
-  tag: string | undefined;
-  posts: Post[];
+export interface InitialPage extends CachedPage {
   page: number;
-  pages: number;
-  total: number;
+}
+
+interface HomeCache extends CachedPage {
+  tag: string | undefined;
+  page: number;
 }
 
 let homeCache: HomeCache | null = null;
@@ -36,11 +37,15 @@ let homeScrollY = 0;
 // Cache each fetched page's data so turning to an already-loaded (or prefetched)
 // page renders instantly from memory — no async fetch, no intermediate old-page
 // frame, no layout shift. Invalidated whenever the timeline changes.
-const pageCache = new Map<string, { posts: Post[]; pages: number; total: number }>();
+const pageCache = new Map<string, CachedPage>();
+const pageRequests = new Map<string, Promise<void>>();
+let pageCacheGeneration = 0;
 const cacheKey = (tag: string | undefined, page: number) => `${tag ?? ""}:${page}`;
 
 function clearPageCache() {
+  pageCacheGeneration += 1;
   pageCache.clear();
+  pageRequests.clear();
 }
 
 const MAX_MOUNTED_PAGES = 8;
@@ -57,22 +62,28 @@ function withPage(prev: Map<number, Post[]>, p: number, posts: Post[]): Map<numb
   return m;
 }
 
-function prefetchNeighbors(
-  page: number,
-  tag: string | undefined,
-  pages: number,
-  onCached?: () => void,
-) {
+function prefetchNeighbors(page: number, tag: string | undefined, pages: number) {
   for (const p of [page + 1, page - 1]) {
-    if (p < 1 || p > pages || pageCache.has(cacheKey(tag, p))) continue;
-    getPosts(p, 20, tag)
+    const key = cacheKey(tag, p);
+    if (p < 1 || p > pages || pageCache.has(key) || pageRequests.has(key)) continue;
+    const generation = pageCacheGeneration;
+    const request = getPosts(p, 20, tag)
       .then((r) => {
-        pageCache.set(cacheKey(tag, r.page), { posts: r.posts, pages: r.pages, total: r.total });
+        if (generation !== pageCacheGeneration) return;
+        pageCache.set(cacheKey(tag, r.page), {
+          posts: r.posts,
+          pages: r.pages,
+          total: r.total,
+          post_pages: r.post_pages,
+        });
         preloadPostFonts(r.posts);
         preloadImages(pageImageUrls(r.posts));
-        onCached?.();
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => {
+        if (pageRequests.get(key) === request) pageRequests.delete(key);
+      });
+    pageRequests.set(key, request);
   }
 }
 
@@ -95,6 +106,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
   const [page, setPage] = useState(seed?.page ?? 1);
   const [pages, setPages] = useState(seed?.pages ?? 0);
   const [total, setTotal] = useState(seed?.total ?? 0);
+  const [postPages, setPostPages] = useState(seed?.post_pages ?? {});
   const [loading, setLoading] = useState(!seed);
   const posts = useMemo(() => loadedPages.get(page) ?? [], [loadedPages, page]);
   const [activeTag, setActiveTag] = useState<string | undefined>(tagParam);
@@ -108,23 +120,23 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     // render before the new feed lands, so without this the header pairs the
     // new tag with the old tag's total for a beat. Take the cached count when
     // this tag's first page is already in hand, so revisits stay instant.
-    setTotal(pageCache.get(cacheKey(tagParam, 1))?.total ?? 0);
+    const cached = pageCache.get(cacheKey(tagParam, 1));
+    setTotal(cached?.total ?? 0);
   }
 
-  // Pages land in `pageCache` outside of React (the background prefetch of the
-  // neighbouring pages), which on its own would never re-render; bumping this
-  // re-derives `pageOfPost` as they arrive.
-  const [cacheVersion, bumpCache] = useReducer((n: number) => n + 1, 0);
-
-  // Where every post the feed has in hand lives, so an echo whose original sits
-  // on another page can link to it instead of quoting it again.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `cacheVersion` re-derives the index as pages land
+  // Snapshot the pages available at an intentional feed transition. Background
+  // prefetches must not re-derive this index: doing so replaced already-painted
+  // echo cards and usernames when a neighbouring request completed.
   const pageOfPost = useMemo(() => {
-    const at = new Map<string, number>();
-    for (let p = 1; p <= pages; p++)
-      for (const post of pageCache.get(cacheKey(activeTag, p))?.posts ?? []) at.set(post.id, p);
+    const at = new Map<string, number>(Object.entries(postPages));
+    for (const [p, mountedPosts] of loadedPages) {
+      // `loadedPages` may briefly retain another tag's pages during navigation.
+      // Only index a page when it is the active feed's cached object.
+      if (pageCache.get(cacheKey(activeTag, p))?.posts !== mountedPosts) continue;
+      for (const post of mountedPosts) at.set(post.id, p);
+    }
     return (id: string) => at.get(id);
-  }, [activeTag, pages, cacheVersion]);
+  }, [activeTag, loadedPages, postPages]);
 
   // The post to scroll to and highlight after turning to another page (set when
   // an echo's reference points off this page). A fresh object per jump, so the
@@ -161,10 +173,18 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       setLoadedPages((prev) => withPage(prev, p, cached.posts));
       setPages(cached.pages);
       setTotal(cached.total);
+      setPostPages(cached.post_pages ?? {});
       setPage(p);
       setLoading(false);
-      homeCache = { tag, posts: cached.posts, page: p, pages: cached.pages, total: cached.total };
-      prefetchNeighbors(p, tag, cached.pages, bumpCache);
+      homeCache = {
+        tag,
+        posts: cached.posts,
+        page: p,
+        pages: cached.pages,
+        total: cached.total,
+        post_pages: cached.post_pages,
+      };
+      prefetchNeighbors(p, tag, cached.pages);
       return;
     }
     setLoading(true);
@@ -174,11 +194,16 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       // (after PostContent mounts and fetches them), well after the images.
       const [postsRes] = await Promise.all([getPosts(p, 20, tag), loadEmojis()]);
       if (myReq !== reqRef.current) return;
-      pageCache.set(cacheKey(tag, postsRes.page), { posts: postsRes.posts, pages: postsRes.pages, total: postsRes.total });
-      bumpCache();
+      pageCache.set(cacheKey(tag, postsRes.page), {
+        posts: postsRes.posts,
+        pages: postsRes.pages,
+        total: postsRes.total,
+        post_pages: postsRes.post_pages,
+      });
       setLoadedPages((prev) => withPage(prev, postsRes.page, postsRes.posts));
       setPages(postsRes.pages);
       setTotal(postsRes.total);
+      setPostPages(postsRes.post_pages ?? {});
       setPage(postsRes.page);
       homeCache = {
         tag,
@@ -186,8 +211,9 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
         page: postsRes.page,
         pages: postsRes.pages,
         total: postsRes.total,
+        post_pages: postsRes.post_pages,
       };
-      prefetchNeighbors(postsRes.page, tag, postsRes.pages, bumpCache);
+      prefetchNeighbors(postsRes.page, tag, postsRes.pages);
     } catch {
       // ignore
     } finally {
@@ -197,19 +223,23 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
 
   const resetPages = useCallback(() => {
     clearPageCache();
-    bumpCache();
     setLoadedPages(new Map());
+    setPostPages({});
   }, []);
 
   const seededRef = useRef(false);
   useEffect(() => {
     if (seededRef.current || snap || !seedServer) return;
     seededRef.current = true;
-    pageCache.set(cacheKey(tagParam, seedServer.page), { posts: seedServer.posts, pages: seedServer.pages, total: seedServer.total });
-    homeCache = { tag: tagParam, posts: seedServer.posts, page: seedServer.page, pages: seedServer.pages, total: seedServer.total };
+    pageCache.set(cacheKey(tagParam, seedServer.page), {
+      posts: seedServer.posts,
+      pages: seedServer.pages,
+      total: seedServer.total,
+      post_pages: seedServer.post_pages,
+    });
+    homeCache = { tag: tagParam, ...seedServer };
     loadEmojis();
-    prefetchNeighbors(seedServer.page, tagParam, seedServer.pages, bumpCache);
-    bumpCache();
+    prefetchNeighbors(seedServer.page, tagParam, seedServer.pages);
   }, [snap, seedServer, tagParam]);
 
   useLayoutEffect(() => {
@@ -217,16 +247,19 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
       homeCache = null;
       homeScrollY = 0;
       clearPageCache();
-      bumpCache();
       scrollToTop();
       return;
     }
     if (restore && homeCache) {
       const snapshot = homeCache;
       window.scrollTo({ top: homeScrollY, behavior: "instant" });
-      pageCache.set(cacheKey(snapshot.tag, snapshot.page), { posts: snapshot.posts, pages: snapshot.pages, total: snapshot.total });
-      bumpCache();
-      prefetchNeighbors(snapshot.page, snapshot.tag, snapshot.pages, bumpCache);
+      pageCache.set(cacheKey(snapshot.tag, snapshot.page), {
+        posts: snapshot.posts,
+        pages: snapshot.pages,
+        total: snapshot.total,
+        post_pages: snapshot.post_pages,
+      });
+      prefetchNeighbors(snapshot.page, snapshot.tag, snapshot.pages);
       return;
     }
     scrollToTop();
@@ -270,8 +303,17 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     if (loadedPages.has(n)) {
       setLoadedPages((prev) => withPage(prev, n, prev.get(n)!));
       setPage(n);
-      homeCache = { tag: activeTag, posts: loadedPages.get(n)!, page: n, pages, total };
-      prefetchNeighbors(n, activeTag, pages, bumpCache);
+      const cached = pageCache.get(cacheKey(activeTag, n));
+      setPostPages(cached?.post_pages ?? {});
+      homeCache = {
+        tag: activeTag,
+        posts: loadedPages.get(n)!,
+        page: n,
+        pages,
+        total,
+        post_pages: cached?.post_pages,
+      };
+      prefetchNeighbors(n, activeTag, pages);
     } else {
       load(n, activeTag);
     }

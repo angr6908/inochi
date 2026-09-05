@@ -111,7 +111,13 @@ export const deleteAccount = (password: string) =>
 export const getPosts = (page = 1, limit = 20, tag?: string) => {
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (tag) params.set("tag", tag);
-  return request<{ posts: Post[]; total: number; page: number; pages: number }>(
+  return request<{
+    posts: Post[];
+    total: number;
+    page: number;
+    pages: number;
+    post_pages?: Record<string, number>;
+  }>(
     `/api/posts?${params}`
   );
 };

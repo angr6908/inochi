@@ -57,6 +57,7 @@ pub async fn search_posts(
             total: 0,
             page: 1,
             pages: 0,
+            post_pages: std::collections::HashMap::new(),
             matches: None,
         }));
     }

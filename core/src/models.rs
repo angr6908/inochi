@@ -147,6 +147,10 @@ pub struct PostsListResponse {
     pub total: i64,
     pub page: u32,
     pub pages: u32,
+    /// Locations of parents referenced on this page that live on an adjacent
+    /// page. This makes the initial feed match its settled prefetched state.
+    #[serde(skip_serializing_if = "std::collections::HashMap::is_empty")]
+    pub post_pages: std::collections::HashMap<String, u32>,
     // Number of posts that actually matched the query, as opposed to `total`,
     // which counts every post in the matched threads (used for pagination).
     // Only set for search; omitted from the timeline/tag responses.
