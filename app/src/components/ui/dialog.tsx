@@ -25,8 +25,9 @@ function DialogClose({ ...props }: DialogPrimitive.Close.Props) {
 
 function DialogOverlay({
   className,
+  variant = "default",
   ...props
-}: DialogPrimitive.Backdrop.Props) {
+}: DialogPrimitive.Backdrop.Props & { variant?: "default" | "heavy" }) {
   return (
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
@@ -35,6 +36,10 @@ function DialogOverlay({
         // one, leaving the dialog floating with no separation — dark needs a
         // heavier veil to do the same job.
         "fixed inset-0 isolate z-50 bg-black/10 duration-100 supports-backdrop-filter:backdrop-blur-xs data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 dark:bg-black/50",
+        // Hides the page rather than veiling it, for content that has to read
+        // on its own terms (a full-bleed image).
+        variant === "heavy" &&
+          "bg-black/80 supports-backdrop-filter:backdrop-blur-sm dark:bg-black/80",
         className
       )}
       {...props}
@@ -46,15 +51,27 @@ function DialogContent({
   className,
   overlayClassName,
   children,
+  variant = "default",
+  overlay = "default",
   showCloseButton = true,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
   overlayClassName?: string
+  /**
+   * `bare` removes the popup's own surface - fill, padding, ring and shadow -
+   * for content that is the surface itself, such as a full-bleed image.
+   */
+  variant?: "default" | "bare"
+  /**
+   * `heavy` is for a dialog whose content must read against the page rather
+   * than float above it: it hides the page instead of veiling it.
+   */
+  overlay?: "default" | "heavy"
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay className={overlayClassName} />
+      <DialogOverlay variant={overlay} className={overlayClassName} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(
@@ -63,6 +80,8 @@ function DialogContent({
           // scrolls, the popup does not. Cap it to the viewport and let it
           // scroll itself, so a dialog can never grow out of reach.
           "fixed top-1/2 left-1/2 z-50 grid max-h-[calc(100dvh-2rem)] min-w-0 w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overflow-x-hidden overflow-y-auto rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none [&>*]:min-w-0 sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+          variant === "bare" &&
+            "gap-3 border-0 bg-transparent p-0 shadow-none ring-0",
           className
         )}
         {...props}

@@ -1,19 +1,75 @@
 import * as React from "react"
+import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+
+const cardVariants = cva(
+  "group/card flex flex-col overflow-hidden rounded-xl border border-foreground/10 bg-card text-sm text-card-foreground has-[>img:first-child]:pt-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
+  {
+    variants: {
+      size: {
+        default: "gap-4 py-4 has-data-[slot=card-footer]:pb-0",
+        sm: "gap-3 py-3 has-data-[slot=card-footer]:pb-0",
+        // No padding of its own: the content slot owns the whole inset. For
+        // cards that are a single flush panel rather than stacked sections.
+        flush: "gap-0 py-0",
+      },
+      tone: {
+        default: "",
+        destructive: "border-destructive",
+      },
+      // Cards in a thread read as one surface: the shared edge loses its
+      // rounding, and only the upper card draws the seam between them.
+      join: {
+        none: "",
+        next: "rounded-b-none border-b-0",
+        prev: "rounded-t-none",
+        both: "rounded-none border-b-0",
+      },
+      // A single inset outline traces the card's own box, so corners stay
+      // correct on squared join edges, with no layout shift and no bleed onto
+      // neighbours.
+      highlighted: {
+        true: "outline outline-1 outline-primary outline-offset-[-1px]",
+        false: "",
+      },
+      // Drop the top border when the card above already drew that seam.
+      borderTop: {
+        true: "",
+        false: "border-t-0",
+      },
+    },
+    compoundVariants: [
+      // A highlighted card needs a complete box for the outline to trace, so it
+      // keeps the bottom edge it would otherwise hand to the card below.
+      { join: "next", highlighted: true, class: "border-b" },
+      { join: "both", highlighted: true, class: "border-b" },
+    ],
+    defaultVariants: {
+      size: "default",
+      tone: "default",
+      join: "none",
+      highlighted: false,
+      borderTop: true,
+    },
+  }
+)
 
 function Card({
   className,
   size = "default",
+  tone = "default",
+  join = "none",
+  highlighted = false,
+  borderTop = true,
   ...props
-}: React.ComponentProps<"div"> & { size?: "default" | "sm" }) {
+}: React.ComponentProps<"div"> & VariantProps<typeof cardVariants>) {
   return (
     <div
       data-slot="card"
       data-size={size}
       className={cn(
-        "group/card flex flex-col gap-4 overflow-hidden rounded-xl border border-foreground/10 bg-card py-4 text-sm text-card-foreground has-data-[slot=card-footer]:pb-0 has-[>img:first-child]:pt-0 data-[size=sm]:gap-3 data-[size=sm]:py-3 data-[size=sm]:has-data-[slot=card-footer]:pb-0 *:[img:first-child]:rounded-t-xl *:[img:last-child]:rounded-b-xl",
-        className
+        cardVariants({ size, tone, join, highlighted, borderTop, className })
       )}
       {...props}
     />
@@ -33,14 +89,28 @@ function CardHeader({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardTitle({ className, ...props }: React.ComponentProps<"div">) {
+const cardTitleVariants = cva(
+  "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
+  {
+    variants: {
+      tone: {
+        default: "",
+        destructive: "text-destructive",
+      },
+    },
+    defaultVariants: { tone: "default" },
+  }
+)
+
+function CardTitle({
+  className,
+  tone = "default",
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof cardTitleVariants>) {
   return (
     <div
       data-slot="card-title"
-      className={cn(
-        "font-heading text-base leading-snug font-medium group-data-[size=sm]/card:text-sm",
-        className
-      )}
+      className={cn(cardTitleVariants({ tone, className }))}
       {...props}
     />
   )
@@ -69,11 +139,34 @@ function CardAction({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
-function CardContent({ className, ...props }: React.ComponentProps<"div">) {
+const cardContentVariants = cva("", {
+  variants: {
+    padding: {
+      default: "px-4 group-data-[size=sm]/card:px-3",
+      // Inset on every side: for a flush card, where the content slot is the
+      // only thing holding the card's padding.
+      box: "p-4",
+    },
+    // Vertical rhythm for a content slot holding several blocks.
+    stack: {
+      none: "",
+      sm: "flex flex-col gap-3",
+      md: "flex flex-col gap-4",
+    },
+  },
+  defaultVariants: { padding: "default", stack: "none" },
+})
+
+function CardContent({
+  className,
+  padding = "default",
+  stack = "none",
+  ...props
+}: React.ComponentProps<"div"> & VariantProps<typeof cardContentVariants>) {
   return (
     <div
       data-slot="card-content"
-      className={cn("px-4 group-data-[size=sm]/card:px-3", className)}
+      className={cn(cardContentVariants({ padding, stack, className }))}
       {...props}
     />
   )

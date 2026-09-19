@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useLayoutEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState, useCallback } from "react";
 import { User, getMe, signIn as apiSignIn, signUp as apiSignUp } from "./api";
 
 // Restore the cached session before the first paint so the logged-in UI (nav,
@@ -87,8 +87,16 @@ export function AuthProvider({ children, initialAuthed }: { children: React.Reac
     localStorage.setItem("user", JSON.stringify(u));
   }, []);
 
+  // Built once per user/loading change rather than per render: the callbacks
+  // are already stable, so an inline object would redraw every consumer of the
+  // context (nav, composer, every card) on any parent re-render.
+  const value = useMemo(
+    () => ({ user, loading, signIn, signUp, signOut, refreshUser }),
+    [user, loading, signIn, signUp, signOut, refreshUser],
+  );
+
   return (
-    <AuthContext.Provider value={{ user, loading, signIn, signUp, signOut, refreshUser }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

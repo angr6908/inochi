@@ -12,13 +12,13 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ConfirmDialog } from "./confirm-dialog";
 import { PostContent } from "./post-content";
 import { PostBody } from "./post-body";
 import { ImageGallery } from "./image-gallery";
@@ -91,6 +91,22 @@ const GAP_UNITS: [string, number][] = [
   ["second", 1],
 ];
 
+// Constructing an Intl.NumberFormat is the expensive part; the set of units is
+// fixed, so each one's formatter is built on first use and then reused.
+const gapFormatters = new Map<string, Intl.NumberFormat>();
+function gapFormatter(unit: string) {
+  let f = gapFormatters.get(unit);
+  if (!f) {
+    f = new Intl.NumberFormat("en", {
+      style: "unit",
+      unit: unit as Intl.NumberFormatOptions["unit"],
+      unitDisplay: "long",
+    });
+    gapFormatters.set(unit, f);
+  }
+  return f;
+}
+
 function formatGap(fromDateStr: string, toDateStr: string): string {
   const from = new Date(fromDateStr.replace(" ", "T") + "Z").getTime();
   const to = new Date(toDateStr.replace(" ", "T") + "Z").getTime();
@@ -98,7 +114,7 @@ function formatGap(fromDateStr: string, toDateStr: string): string {
   for (const [unit, secs] of GAP_UNITS) {
     if (seconds >= secs || unit === "second") {
       const n = Math.round(seconds / secs);
-      return new Intl.NumberFormat("en", { style: "unit", unit, unitDisplay: "long" }).format(n);
+      return gapFormatter(unit).format(n);
     }
   }
   return "0 seconds";
@@ -127,8 +143,14 @@ interface PostCardProps {
   /** Called after a successful delete (with this post's id) instead of `onUpdate`.
    *  Lets the thread page navigate away when the root post is removed. */
   onDelete?: (postId: string) => void;
-  /** Extra classes for the card root (used to merge threaded neighbors). */
+  /** Extra classes for the card root (outer spacing in the feed). */
   className?: string;
+  /** How this card joins the threaded neighbours around it (see Card's `join`). */
+  join?: "none" | "next" | "prev" | "both";
+  /** Trace the card with the target outline, for a jumped-to post. */
+  highlighted?: boolean;
+  /** False when the card above already drew the border they share. */
+  borderTop?: boolean;
   /** Above-the-fold hint — eager-load this card's media (the first post in the feed). */
   priority?: boolean;
   /** Whether to show the standalone echo button (outside the menu). Defaults to
@@ -140,7 +162,7 @@ interface PostCardProps {
   echoInMenu?: boolean;
 }
 
-export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost, hideUsername, onEcho, onDelete, className, priority, echoVisible = true, echoInMenu }: PostCardProps) {
+export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost, hideUsername, onEcho, onDelete, className, join, highlighted, borderTop, priority, echoVisible = true, echoInMenu }: PostCardProps) {
   const { user } = useAuth();
   const router = useRouter();
   const isOwner = user?.id === post.user_id;
@@ -168,7 +190,9 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
   const [saving, setSaving] = useState(false);
   // Echo link being edited: the parent post id, plus a summary for display.
   // Both are populated by openEdit when the dialog opens.
-  const [editParentId, setEditParentId] = useState<string | null>(null);
+  // Read only by handleSave, never rendered — the paired `parentSummary` below
+  // is what the dialog draws, so this does not need to trigger a render.
+  const editParentId = useRef<string | null>(null);
   const [parentSummary, setParentSummary] = useState<ParentSummary | null>(null);
   const [parentInput, setParentInput] = useState("");
   const [linking, setLinking] = useState(false);
@@ -176,7 +200,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
   const openEdit = () => {
     setEditContent(post.content);
     setEditImages(post.images.map((img) => ({ kind: "existing", id: img.id, preview: img.url })));
-    setEditParentId(post.parent_post_id);
+    editParentId.current = post.parent_post_id;
     setParentSummary(
       post.parent_post
         ? { username: post.parent_post.username, content: post.parent_post.content }
@@ -199,7 +223,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
     setLinking(true);
     try {
       const { post: target } = await getPost(pid);
-      setEditParentId(target.id);
+      editParentId.current = target.id;
       setParentSummary({ username: target.username, content: target.content });
       setParentInput("");
     } catch {
@@ -210,7 +234,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
   };
 
   const handleUnlinkParent = () => {
-    setEditParentId(null);
+    editParentId.current = null;
     setParentSummary(null);
   };
 
@@ -253,7 +277,8 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
       const fd = new FormData();
       fd.append("content", editContent);
       // Only send the echo link when it actually changed; an empty string unlinks.
-      const parentChange = editParentId !== post.parent_post_id ? editParentId : undefined;
+      const parentChange =
+        editParentId.current !== post.parent_post_id ? editParentId.current : undefined;
       if (parentChange !== undefined) fd.append("parent_post_id", parentChange ?? "");
       // The final image order: existing images keep their id, new files are
       // appended and referenced by their upload index. Existing images absent
@@ -309,8 +334,15 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
   };
 
   return (
-    <Card id={post.id} className={cn("scroll-mt-20 gap-0 py-0", className)}>
-      <CardContent className="p-4">
+    <Card
+      id={post.id}
+      size="flush"
+      join={join}
+      highlighted={highlighted}
+      borderTop={borderTop}
+      className={cn("scroll-mt-20", className)}
+    >
+      <CardContent padding="box">
         {/* Header */}
         {/* 10px below the header. With no text the empty content div collapses,
             so this collapses with the inner-card wrapper's mt-[9px]; mb-2.5 (10px)
@@ -357,11 +389,11 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
               <Button
                 variant="ghost"
                 size="sm"
+                tone="muted"
                 type="button"
                 aria-label="Echo"
                 title="Echo"
                 onClick={handleEcho}
-                className="h-7 gap-1 px-2 text-muted-foreground hover:text-foreground"
               >
                 <Reply className="size-4" />
                 {hasFollowups && (
@@ -376,9 +408,9 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                   render={
                     <Button
                       variant="ghost"
-                      size="icon"
+                      size="icon-sm"
+                      tone="muted"
                       aria-label="Post actions"
-                      className="size-7 text-muted-foreground hover:text-foreground"
                     />
                   }
                 >
@@ -446,8 +478,8 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
           <div className="mt-[9px] flex flex-col gap-2.5">
             <ImageGallery images={post.images} priority={priority} />
 
-            {post.link_previews.map((lp, i) => (
-              <LinkPreviewCard key={i} preview={lp} priority={priority} />
+            {post.link_previews.map((lp) => (
+              <LinkPreviewCard key={lp.url} preview={lp} priority={priority} />
             ))}
 
             {/* Reference card — the quoted thread this follow-up replies to: the
@@ -504,8 +536,8 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                     {(q.images.length > 0 || q.link_previews.length > 0) && (
                       <div className="relative z-20 mt-[9px] flex flex-col gap-2.5">
                         <ImageGallery images={q.images} />
-                        {q.link_previews.map((lp, i) => (
-                          <LinkPreviewCard key={i} preview={lp} />
+                        {q.link_previews.map((lp) => (
+                          <LinkPreviewCard key={lp.url} preview={lp} />
                         ))}
                       </div>
                     )}
@@ -553,7 +585,8 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                   value={editContent}
                   onChange={(e) => setEditContent(e.target.value)}
                   rows={5}
-                  className="max-h-[45dvh] max-w-full overflow-x-hidden font-content leading-relaxed [overflow-wrap:anywhere] placeholder:font-sans"
+                  font="content"
+                  className="max-h-[45dvh] max-w-full overflow-x-hidden [overflow-wrap:anywhere]"
                 />
 
                 {/* Image controls: reorder/remove existing or newly-added
@@ -575,10 +608,10 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                     />
                     <Button
                       variant="outline"
-                      size="sm"
+                      size="default"
+                      tone="muted"
                       type="button"
                       onClick={() => editFileRef.current?.click()}
-                      className="h-8 gap-1.5 text-muted-foreground hover:text-foreground"
                     >
                       <ImagePlus className="size-4" />
                       Add image
@@ -602,9 +635,10 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                       <Button
                         variant="ghost"
                         size="sm"
+                        tone="muted"
                         type="button"
                         onClick={handleUnlinkParent}
-                        className="h-7 shrink-0 self-start gap-1 px-2 text-muted-foreground hover:text-foreground"
+                        className="shrink-0 self-start"
                       >
                         <Link2Off className="size-4" />
                         Make independent
@@ -626,11 +660,11 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                       />
                       <Button
                         variant="outline"
-                        size="sm"
+                        size="lg"
                         type="button"
                         onClick={handleLinkParent}
                         disabled={linking || !parentInput.trim()}
-                        className="h-9 shrink-0 gap-1"
+                        className="shrink-0"
                       >
                         <Link2 className="size-4" />
                         {linking ? "Linking..." : "Link"}
@@ -651,18 +685,13 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
               </DialogContent>
             </Dialog>
 
-            <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Delete this post?</AlertDialogTitle>
-                  <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+            <ConfirmDialog
+              open={deleteOpen}
+              onOpenChange={setDeleteOpen}
+              title="Delete this post?"
+              description="This action cannot be undone."
+              onConfirm={handleDelete}
+            />
           </>
         )}
       </CardContent>

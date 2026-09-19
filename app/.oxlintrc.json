@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "ignorePatterns": [".next", "src/generated"],
+  "plugins": ["typescript", "unicorn", "oxc", "react", "nextjs", "jsx-a11y"],
+  "categories": {
+    "correctness": "error"
+  },
+  "env": {
+    "builtin": true
+  },
+  "jsPlugins": ["@shadcn/lint"],
+  "rules": {
+    "shadcn/no-restyle": ["error", { "allow": ["layout"] }],
+
+    // This app deliberately does not use next/image. Uploads are served by the
+    // Rust backend and resized by vips-tools out of band, and the Dockerfile
+    // strips sharp from the bundle because nothing renders through it.
+    // Preloading and decode scheduling are handled by src/lib/image-loader.ts,
+    // which needs the real <img> element. See the Dockerfile's web stage.
+    "nextjs/no-img-element": "off"
+  },
+  "overrides": [
+    {
+      // Vendored shadcn primitives: this directory *is* the design system, so
+      // it is where styling is defined rather than a violation. The label
+      // primitive is likewise a generic wrapper that forwards htmlFor from its
+      // caller, which the rule cannot see; call sites are still checked.
+      "files": ["src/components/ui/**"],
+      "rules": {
+        "shadcn/no-restyle": "off",
+        "jsx-a11y/label-has-associated-control": "off"
+      }
+    }
+  ]
+}

@@ -7,7 +7,6 @@ import { ChevronLeftIcon, ChevronRightIcon, MoreHorizontalIcon } from "lucide-re
 function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
   return (
     <nav
-      role="navigation"
       aria-label="pagination"
       data-slot="pagination"
       className={cn("mx-auto flex w-full justify-center", className)}
@@ -48,7 +47,12 @@ function PaginationLink({
     <Button
       variant={isActive ? "outline" : "ghost"}
       size={size}
-      className={cn(className)}
+      // The disabled look is driven by the `aria-disabled` the caller already
+      // sets, so a page control never has to be dimmed by hand.
+      className={cn(
+        "aria-disabled:pointer-events-none aria-disabled:opacity-50",
+        className
+      )}
       nativeButton={false}
       render={
         <a
@@ -71,7 +75,7 @@ function PaginationPrevious({
     <PaginationLink
       aria-label="Go to previous page"
       size="default"
-      className={cn("pl-1.5!", className)}
+      className={className}
       {...props}
     >
       <ChevronLeftIcon data-icon="inline-start" />
@@ -89,7 +93,7 @@ function PaginationNext({
     <PaginationLink
       aria-label="Go to next page"
       size="default"
-      className={cn("pr-1.5!", className)}
+      className={className}
       {...props}
     >
       <span className="hidden sm:block">{text}</span>

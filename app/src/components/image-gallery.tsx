@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -25,8 +25,15 @@ function GalleryImage({
   priority?: boolean;
   onClick?: () => void;
 }) {
-  const [src, setSrc] = useState(image.url);
-  const retried = useRef(false);
+  // `src` is seeded from the prop but then owned locally, because the error
+  // handler retries through it. A changed url therefore has to be adopted
+  // explicitly or the element keeps painting the previous image. Held as one
+  // object so the url it was seeded from, what is displayed, and whether the
+  // retry has been spent can never disagree.
+  const [shown, setShown] = useState({ url: image.url, src: image.url, retried: false });
+  if (shown.url !== image.url) {
+    setShown({ url: image.url, src: image.url, retried: false });
+  }
 
   // Reserve the image's box from its known ratio so layout never shifts while
   // loading. A "justified" image fills the width its flex column was given and
@@ -54,9 +61,9 @@ function GalleryImage({
           }
         : { aspectRatio: `${image.width} / ${image.height}` };
 
-  return (
+  const img = (
     <img
-      src={src}
+      src={shown.src}
       alt=""
       // Mirror the link-preview thumbnails, which never flicker: decode
       // synchronously and lazy-load the off-screen ones. `decoding="async"` lets
@@ -70,22 +77,47 @@ function GalleryImage({
       fetchPriority={priority ? "high" : undefined}
       decoding="sync"
       style={style}
-      onClick={onClick}
       onError={() => {
-        if (!retried.current) {
-          retried.current = true;
-          setSrc(`${image.url}${image.url.includes("?") ? "&" : "?"}retry=1`);
-        }
+        if (shown.retried) return;
+        setShown((s) => ({
+          ...s,
+          retried: true,
+          src: `${image.url}${image.url.includes("?") ? "&" : "?"}retry=1`,
+        }));
       }}
       className={cn(
-        "block cursor-pointer rounded-md border bg-muted",
+        "block rounded-md border bg-muted",
         mode === "single"
-          ? sized ? "mx-auto" : "mx-auto max-h-[400px] max-w-full"
+          ? sized ? "" : "max-h-[400px] max-w-full"
           : mode === "lone"
-            ? sized ? "mr-auto" : "mr-auto max-h-[400px] max-w-[50%]"
+            ? sized ? "" : "max-h-[400px] max-w-[50%]"
             : "h-auto w-full",
       )}
     />
+  );
+
+  if (!onClick) return img;
+
+  // Wrapped in a real button rather than carrying `onClick` on the image: that
+  // makes it tabbable and operable by Enter/Space without re-implementing
+  // either. The button is a bare layout box — alignment only — so the image
+  // keeps owning its reserved size and every mode lays out as before.
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label="Open image"
+      className={cn(
+        "block cursor-pointer rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        mode === "single"
+          ? "mx-auto max-w-full"
+          : mode === "lone"
+            ? "mr-auto max-w-full"
+            : "w-full",
+      )}
+    >
+      {img}
+    </button>
   );
 }
 
@@ -172,12 +204,18 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
         {/* Transform-free centering keeps enlarged images sharp in WebKit. */}
         <DialogContent
           showCloseButton={false}
-          overlayClassName="bg-black/80 supports-backdrop-filter:backdrop-blur-sm"
-          className="inset-0 m-auto flex h-fit w-fit max-w-[95vw] translate-none flex-col items-center gap-3 border-0 bg-transparent p-0 shadow-none ring-0 sm:max-w-[95vw]"
+          variant="bare"
+          overlay="heavy"
+          // `pointer-events-none` here (with `pointer-events-auto` on the
+          // image and each thumbnail) lets a click on the empty space around
+          // them reach the backdrop, which dismisses. That is the same "click
+          // beside the picture to close" the strip used to emulate with a
+          // target/currentTarget handler, minus the click handler on a div.
+          className="pointer-events-none inset-0 m-auto flex h-fit w-fit max-w-[95vw] translate-none flex-col items-center sm:max-w-[95vw]"
         >
           <DialogTitle className="sr-only">Image viewer</DialogTitle>
 
-          <div className="relative mx-auto w-fit max-w-full justify-self-center">
+          <div className="pointer-events-auto relative mx-auto w-fit max-w-full justify-self-center">
             <img
               src={current.url}
               alt=""
@@ -219,11 +257,7 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
           </div>
 
           {many && (
-            <div
-              onClick={(e) => {
-                if (e.target === e.currentTarget) setOpen(false);
-              }}
-              className="flex w-full max-w-[95vw] flex-wrap justify-center gap-2">
+            <div className="flex w-full max-w-[95vw] flex-wrap justify-center gap-2">
               {images.map((img, i) => (
                 <button
                   key={img.id}
@@ -231,7 +265,7 @@ export function ImageGallery({ images, priority }: { images: GalleryImg[]; prior
                   onClick={() => setSelected(i)}
                   aria-label={`View image ${i + 1}`}
                   aria-current={i === selected}
-                  className={`size-14 shrink-0 cursor-pointer overflow-hidden rounded-md transition-all focus-visible:outline-none ${
+                  className={`pointer-events-auto size-14 shrink-0 cursor-pointer overflow-hidden rounded-md transition-all focus-visible:outline-none ${
                     i === selected
                       ? "opacity-100 ring-2 ring-white"
                       : "opacity-50 ring-1 ring-white/20 hover:opacity-90"

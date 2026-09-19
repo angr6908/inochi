@@ -1,5 +1,9 @@
 const preloaded = new Set<string>();
 const preloadQueue: string[] = [];
+// Mirrors preloadQueue for membership tests: preloadImages is called with a
+// whole page of urls at a time, and scanning the array for each one made that
+// quadratic.
+const queued = new Set<string>();
 const drainCallbacks: Array<() => void> = [];
 let preloading = false;
 
@@ -26,7 +30,11 @@ function preload(url: string, priority: "high" | "low", onSettle?: () => void) {
 function pumpPreload() {
   if (preloading) return;
   let url = preloadQueue.shift();
-  while (url && preloaded.has(url)) url = preloadQueue.shift();
+  if (url) queued.delete(url);
+  while (url && preloaded.has(url)) {
+    url = preloadQueue.shift();
+    if (url) queued.delete(url);
+  }
   if (!url) {
     if (drainCallbacks.length) drainCallbacks.splice(0).forEach((cb) => cb());
     return;
@@ -48,7 +56,10 @@ export function preloadHigh(...urls: string[]) {
 
 export function preloadImages(urls: string[], onDone?: () => void) {
   for (const url of urls) {
-    if (!preloaded.has(url) && !preloadQueue.includes(url)) preloadQueue.push(url);
+    if (!preloaded.has(url) && !queued.has(url)) {
+      preloadQueue.push(url);
+      queued.add(url);
+    }
   }
   if (onDone) {
     if (preloadQueue.length === 0 && !preloading) onDone();

@@ -105,20 +105,17 @@ export function PostEditor({ parentPostId, placeholder, onPostCreated }: PostEdi
   };
 
   return (
-    <Card className="gap-0 py-0">
-      <CardContent className="flex flex-col gap-3 p-4">
+    <Card size="flush">
+      <CardContent padding="box" stack="sm">
         <Textarea
           ref={textareaRef}
           placeholder={placeholder || "Stay connected."}
           value={content}
           onChange={handleChange}
           rows={2}
-          // The composer is a bare writing surface on the card, not a boxed
-          // field: no border, no fill. `dark:bg-transparent` is load-bearing —
-          // Textarea's own `dark:bg-input/30` is a different variant group from
-          // the `bg-transparent` here, so tailwind-merge keeps both and the dark
-          // fill would otherwise paint a lighter panel behind the text.
-          className="min-h-[60px] resize-none rounded-none border-0 bg-transparent px-0.5 py-0 font-content text-base leading-relaxed shadow-none placeholder:font-sans focus-visible:ring-0 md:text-base dark:bg-transparent"
+          variant="bare"
+          font="content"
+          className="min-h-[60px] resize-none"
         />
         <ImageEditGrid images={images} onReorder={moveImage} onRemove={removeImage} />
         <div className="flex items-center justify-between">
@@ -134,9 +131,9 @@ export function PostEditor({ parentPostId, placeholder, onPostCreated }: PostEdi
             <Button
               variant="ghost"
               size="icon"
+              tone="muted"
               type="button"
               aria-label="Add image"
-              className="size-8 text-muted-foreground hover:text-foreground"
               onClick={() => fileRef.current?.click()}
             >
               <ImagePlus className="size-4" />

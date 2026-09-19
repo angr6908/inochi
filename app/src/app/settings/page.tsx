@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { updatePassword, updateUsername, deleteAccount, refreshEmojis, uploadEmoji, deleteEmoji, Emoji } from "@/lib/api";
@@ -9,13 +9,34 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { toast } from "sonner";
 import { toastError } from "@/lib/utils";
 import { useTitle } from "@/lib/use-title";
 
+// Every form on this page is the same shape: a label bound to one control,
+// stacked. The `id` is still repeated on the control itself, since that is what
+// `htmlFor` points at — this only removes the repeated markup around it.
+function Field({
+  id,
+  label,
+  children,
+}: {
+  id: string;
+  label: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={id}>{label}</Label>
+      {children}
+    </div>
+  );
+}
+
 export default function SettingsPage() {
-  const { user, signOut, refreshUser } = useAuth();
+  const { user, loading, signOut, refreshUser } = useAuth();
   const router = useRouter();
   useTitle("Settings");
 
@@ -29,11 +50,17 @@ export default function SettingsPage() {
   // Emojis
   const [emojis, setEmojis] = useState<Emoji[]>([]);
   const [shortcode, setShortcode] = useState("");
-  const [emojiFile, setEmojiFile] = useState<File | null>(null);
+  // Only read when the form is submitted; holding it in state re-rendered the
+  // whole settings page every time a file was picked.
+  const emojiFile = useRef<File | null>(null);
 
+  // Wait for the session to resolve first: `user` is null on the first client
+  // render while the cached token is being verified, and redirecting on that
+  // bounced signed-in readers straight back out of their own settings page.
+  // `replace`, so the back button does not land here again mid-redirect.
   useEffect(() => {
-    if (!user) router.push("/auth/signin");
-  }, [user, router]);
+    if (!loading && !user) router.replace("/auth/signin");
+  }, [loading, user, router]);
 
   useEffect(() => {
     refreshEmojis().then(setEmojis).catch(() => {});
@@ -76,14 +103,14 @@ export default function SettingsPage() {
 
   const handleUploadEmoji = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!shortcode.trim() || !emojiFile) return;
+    if (!shortcode.trim() || !emojiFile.current) return;
     try {
       const fd = new FormData();
       fd.append("shortcode", shortcode.trim());
-      fd.append("image", emojiFile);
+      fd.append("image", emojiFile.current);
       await uploadEmoji(fd);
       setShortcode("");
-      setEmojiFile(null);
+      emojiFile.current = null;
       // Refresh the shared emoji cache too, so post cards and the picker pick
       // up the new mapping without a reload.
       setEmojis(await refreshEmojis());
@@ -113,10 +140,9 @@ export default function SettingsPage() {
         <CardHeader><CardTitle>Change Username</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={handleUsername} className="space-y-3">
-            <div className="space-y-2">
-              <Label>Current: {user.username}</Label>
-              <Input placeholder="New username" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} required />
-            </div>
+            <Field id="new-username" label={`Current: ${user.username}`}>
+              <Input id="new-username" placeholder="New username" value={newUsername} onChange={(e) => setNewUsername(e.target.value)} required />
+            </Field>
             <Button type="submit" size="sm">Update</Button>
           </form>
         </CardContent>
@@ -126,14 +152,12 @@ export default function SettingsPage() {
         <CardHeader><CardTitle>Change Password</CardTitle></CardHeader>
         <CardContent>
           <form onSubmit={handlePassword} className="space-y-3">
-            <div className="space-y-2">
-              <Label>Current Password</Label>
-              <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label>New Password</Label>
-              <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={4} />
-            </div>
+            <Field id="current-password" label="Current Password">
+              <Input id="current-password" type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required />
+            </Field>
+            <Field id="new-password" label="New Password">
+              <Input id="new-password" type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} required minLength={4} />
+            </Field>
             <Button type="submit" size="sm">Update</Button>
           </form>
         </CardContent>
@@ -141,7 +165,7 @@ export default function SettingsPage() {
 
       <Card>
         <CardHeader><CardTitle>Custom Emojis</CardTitle></CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent stack="md">
           {emojis.length > 0 && (
             <div className="flex flex-wrap gap-3">
               {emojis.map((emoji) => (
@@ -155,41 +179,35 @@ export default function SettingsPage() {
           )}
           <Separator />
           <form onSubmit={handleUploadEmoji} className="space-y-3">
-            <div className="space-y-2">
-              <Label>Shortcode</Label>
-              <Input placeholder="e.g. party_parrot" value={shortcode} onChange={(e) => setShortcode(e.target.value)} required />
-            </div>
-            <div className="space-y-2">
-              <Label>Image</Label>
-              <Input type="file" accept="image/*" onChange={(e) => setEmojiFile(e.target.files?.[0] || null)} required />
-            </div>
+            <Field id="emoji-shortcode" label="Shortcode">
+              <Input id="emoji-shortcode" placeholder="e.g. party_parrot" value={shortcode} onChange={(e) => setShortcode(e.target.value)} required />
+            </Field>
+            <Field id="emoji-image" label="Image">
+              <Input id="emoji-image" type="file" accept="image/*" onChange={(e) => { emojiFile.current = e.target.files?.[0] ?? null; }} required />
+            </Field>
             <Button type="submit" size="sm">Upload Emoji</Button>
           </form>
         </CardContent>
       </Card>
 
-      <Card className="border-destructive">
-        <CardHeader><CardTitle className="text-destructive">Delete Account</CardTitle></CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-2">
-            <Label>Confirm your password</Label>
-            <Input type="password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} />
-          </div>
-          <AlertDialog>
-            <AlertDialogTrigger render={<Button variant="destructive" size="sm" disabled={!deletePassword} />}>
-              Delete Account
-            </AlertDialogTrigger>
-            <AlertDialogContent>
-              <AlertDialogHeader>
-                <AlertDialogTitle>Are you sure?</AlertDialogTitle>
-                <AlertDialogDescription>This will permanently delete your account and all your posts.</AlertDialogDescription>
-              </AlertDialogHeader>
-              <AlertDialogFooter>
-                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
-              </AlertDialogFooter>
-            </AlertDialogContent>
-          </AlertDialog>
+      <Card tone="destructive">
+        <CardHeader><CardTitle tone="destructive">Delete Account</CardTitle></CardHeader>
+        <CardContent stack="sm">
+          <Field id="delete-password" label="Confirm your password">
+            <Input id="delete-password" type="password" value={deletePassword} onChange={(e) => setDeletePassword(e.target.value)} />
+          </Field>
+          <ConfirmDialog
+            trigger={
+              <AlertDialogTrigger
+                render={<Button variant="destructive" size="sm" disabled={!deletePassword} />}
+              >
+                Delete Account
+              </AlertDialogTrigger>
+            }
+            title="Are you sure?"
+            description="This will permanently delete your account and all your posts."
+            onConfirm={handleDelete}
+          />
         </CardContent>
       </Card>
     </div>

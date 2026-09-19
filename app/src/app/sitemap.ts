@@ -38,8 +38,9 @@ async function rootPosts(): Promise<PostRow[]> {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const origin = await currentOrigin();
-  const posts = await rootPosts();
+  // Independent fetches: awaiting them in sequence made the sitemap wait for
+  // the origin lookup before it even started paging through posts.
+  const [origin, posts] = await Promise.all([currentOrigin(), rootPosts()]);
 
   const staticRoutes: MetadataRoute.Sitemap = [
     { url: `${origin}/`, changeFrequency: "hourly", priority: 1 },

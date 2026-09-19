@@ -35,9 +35,10 @@ export const PostContent = memo(function PostContent({ content, priority }: { co
 
     const renderLine = (text: string, out: ReactNode[]) => {
       let last = 0;
-      let m: RegExpExecArray | null;
-      TOKEN.lastIndex = 0;
-      while ((m = TOKEN.exec(text)) !== null) {
+      // `matchAll` iterates against an internal clone, so the module-level
+      // TOKEN's `lastIndex` is never mutated and concurrent renders can't
+      // resume each other's scan position.
+      for (const m of text.matchAll(TOKEN)) {
         if (m.index > last) out.push(text.slice(last, m.index));
         if (m[1]) {
           const href = m[1].replace(/[.,!?;:'"]+$/, "");

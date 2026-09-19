@@ -50,11 +50,11 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus }: P
     return () => clearTimeout(t);
   }, [highlightId]);
 
-  // Centre a post on this page and highlight it. A same-page jump glides; an
-  // arrival from another page lands instantly, since every card under the
-  // viewport has just been replaced and there is nothing to glide over. The
-  // instant landing re-pins on the next frame, once layout has settled.
-  const focusPost = useCallback((id: string, smooth: boolean) => {
+  // Centre a post on this page. A same-page jump glides; an arrival from
+  // another page lands instantly, since every card under the viewport has just
+  // been replaced and there is nothing to glide over. The instant landing
+  // re-pins on the next frame, once layout has settled.
+  const scrollToPost = useCallback((id: string, smooth: boolean) => {
     const scroll = () =>
       document.getElementById(id)?.scrollIntoView({
         behavior: smooth ? "smooth" : "instant",
@@ -62,14 +62,32 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus }: P
       });
     scroll();
     if (!smooth) requestAnimationFrame(scroll);
-    setHighlightId(id);
   }, []);
 
-  // A fresh `focus` object means the reader just arrived from another page.
+  // Centre a post and highlight it: what a same-page jump does.
+  const focusPost = useCallback(
+    (id: string, smooth: boolean) => {
+      scrollToPost(id, smooth);
+      setHighlightId(id);
+    },
+    [scrollToPost],
+  );
+
+  // A fresh `focus` object means the reader just arrived from another page, so
+  // that post takes the highlight. Derived during render rather than set from
+  // the effect below: the effect owns DOM work (scroll, entrance animation),
+  // and adjusting here avoids the extra render pass a setState-in-effect
+  // queues. See "adjusting state when a prop changes" in the React docs.
+  const [seenFocus, setSeenFocus] = useState(focus);
+  if (focus !== seenFocus) {
+    setSeenFocus(focus);
+    setHighlightId(focus ? focus.id : null);
+  }
+
   // Before paint, so the new page is never shown at the old scroll offset first.
   useLayoutEffect(() => {
     if (!focus) return;
-    focusPost(focus.id, false);
+    scrollToPost(focus.id, false);
 
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const animation = feedRef.current?.animate(
@@ -80,7 +98,7 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus }: P
       { duration: 320, easing: "cubic-bezier(0.16, 1, 0.3, 1)" },
     );
     return () => animation?.cancel();
-  }, [focus, focusPost]);
+  }, [focus, scrollToPost]);
 
   const jumpToPost = (id: string) => {
     if (idsOnPage.has(id)) {
@@ -151,17 +169,22 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus }: P
             onJumpToPost={jumpToPost}
             hideUsername={sameAuthorAsNext}
             onUpdate={onUpdate}
+            join={
+              sameThreadAsNext
+                ? sameThreadAsPrev
+                  ? "both"
+                  : "next"
+                : sameThreadAsPrev
+                  ? "prev"
+                  : "none"
+            }
+            highlighted={i === targetIdx}
+            // The highlighted card keeps the seam it would otherwise hand down,
+            // so the card below must not draw that border a second time.
+            borderTop={!(targetMergedNext && i === targetIdx + 1)}
             className={cn(
               sameThreadAsNext ? "mb-0" : "mb-4",
               i === posts.length - 1 && "mb-0",
-              sameThreadAsNext && "rounded-b-none border-b-0",
-              sameThreadAsPrev && "rounded-t-none",
-              // Highlight on the border: a single inset outline traces the target
-              // card's own box, so corners are always correct — including squared
-              // merge edges — with no layout shift and no bleed onto neighbours.
-              i === targetIdx && "outline outline-1 outline-primary outline-offset-[-1px]",
-              i === targetIdx && targetMergedNext && "border-b",
-              targetMergedNext && i === targetIdx + 1 && "border-t-0",
             )}
           />
         );

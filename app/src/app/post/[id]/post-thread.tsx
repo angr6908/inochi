@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { getPost, Post } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
-import { cn } from "@/lib/utils";
 import { PostCard } from "@/components/post-card";
 import { PostEditor } from "@/components/post-editor";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -69,7 +68,6 @@ export function PostThread({ id, initial }: { id: string; initial: InitialThread
   // hash. Also reacts to in-page hash changes (clicking another post's time).
   // `followups` is not read below; it re-runs the lookup once echoes are in the
   // DOM, so a hash naming an echo still resolves after a load or refetch.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `followups` re-runs the lookup
   useEffect(() => {
     if (loading) return;
     const focus = () => {
@@ -164,7 +162,7 @@ export function PostThread({ id, initial }: { id: string; initial: InitialThread
               : load()
           }
           onEcho={user ? toggleEditor : undefined}
-          className={cn(highlight === node.id && "outline outline-1 outline-primary outline-offset-[-1px]")}
+          highlighted={highlight === node.id}
         />
 
         {user && openEditor === node.id && (

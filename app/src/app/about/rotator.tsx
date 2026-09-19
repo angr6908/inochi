@@ -74,7 +74,6 @@ export function AboutRotator() {
   // `active` is not read below; it is the restart signal. Each rotation must
   // replay the ring from full to empty, so the effect has to re-run when the
   // active line changes.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `active` restarts the ring
   useEffect(() => {
     const el = ringRef.current;
     if (!el) return;
@@ -119,11 +118,10 @@ export function AboutRotator() {
         It may be the last and greatest jailbreak for all humankind.
       </p>
 
-      <div
-        className="flex justify-center text-primary/80"
-        role="progressbar"
-        aria-label="Time until next phrase"
-      >
+      {/* Decoration: a countdown ring for the phrase rotation. It carries no
+          role, because it exposes no value a reader could act on and the
+          phrases themselves are the content. */}
+      <div className="flex justify-center text-primary/80">
         <svg
           width="14"
           height="14"

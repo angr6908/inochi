@@ -77,6 +77,15 @@ type Embed = { src: string; title: string; provider: EmbedProvider };
 const iframeAllow =
   "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen";
 
+// Embeds are YouTube and Twitch players, which need scripts and their own
+// origin (the YouTube IFrame API is driven over postMessage, and both set
+// cookies for playback). What this withholds is the dangerous part:
+// `allow-top-navigation` is absent, so a compromised embed cannot redirect the
+// page out from under the reader, and forms, downloads and pointer lock are
+// blocked too. `allow-same-origin` is same-origin to the *provider*, not to us.
+const iframeSandbox =
+  "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-presentation";
+
 // The embedded player paints its own page background (black) behind the video.
 // The wrapper is an exact 16:9 box, but the iframe's fractional dimensions and
 // the player's own internal layout round to device pixels independently, and
@@ -237,6 +246,7 @@ function EmbedPlayer({ embed }: { embed: Embed }) {
         }}
         className="absolute block border-0 bg-transparent"
         allow={iframeAllow}
+        sandbox={iframeSandbox}
         allowFullScreen
       />
     </div>
@@ -381,6 +391,10 @@ function BrandMark({ icon, className }: { icon: BrandIcon; className?: string })
   const scale = OPTICAL_SCALE[icon.title] ?? 1;
   return (
     <svg
+      // The mark is an inline SVG because it is themed through CSS custom
+      // properties, so it cannot be an <img>; role="img" + aria-label is the
+      // canonical way to make one accessible.
+      // oxlint-disable-next-line jsx-a11y/prefer-tag-over-role -- see above
       role="img"
       viewBox="0 0 24 24"
       aria-label={icon.title}
@@ -487,7 +501,7 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
         >
           {gridImages.map((src, idx) => (
             <PreviewThumb
-              key={idx}
+              key={src}
               src={src}
               alt={preview.title ?? ""}
               priority={priority}

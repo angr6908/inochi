@@ -21,7 +21,11 @@ export function EmojiPickerButton({ onSelect }: EmojiPickerButtonProps) {
   const [PickerComponent, setPickerComponent] = useState<React.ComponentType<Record<string, unknown>> | null>(null);
 
   useEffect(() => {
-    loadEmojis().then(setCustomEmojis);
+    // Custom emojis are an enhancement; if the fetch fails the picker still
+    // opens with the standard set rather than rejecting unhandled.
+    loadEmojis()
+      .then(setCustomEmojis)
+      .catch(() => setCustomEmojis([]));
   }, []);
 
   useEffect(() => {
@@ -29,12 +33,16 @@ export function EmojiPickerButton({ onSelect }: EmojiPickerButtonProps) {
       Promise.all([
         import("@emoji-mart/react"),
         import("@emoji-mart/data"),
-      ]).then(([pickerMod, dataMod]) => {
-        const Picker = pickerMod.default;
-        const data = dataMod.default;
-        const Wrapped = (props: Record<string, unknown>) => <Picker data={data} {...props} />;
-        setPickerComponent(() => Wrapped);
-      });
+      ])
+        .then(([pickerMod, dataMod]) => {
+          const Picker = pickerMod.default;
+          const data = dataMod.default;
+          const Wrapped = (props: Record<string, unknown>) => <Picker data={data} {...props} />;
+          setPickerComponent(() => Wrapped);
+        })
+        // A failed chunk load (offline, stale deploy) would otherwise leave the
+        // popover permanently empty with only an unhandled rejection to show.
+        .catch(() => setOpen(false));
     }
   }, [open, PickerComponent]);
 
@@ -69,15 +77,15 @@ export function EmojiPickerButton({ onSelect }: EmojiPickerButtonProps) {
           <Button
             variant="ghost"
             size="icon"
+            tone="muted"
             type="button"
             aria-label="Add emoji"
-            className="size-8 text-muted-foreground hover:text-foreground"
           />
         }
       >
         <Smile className="size-4" />
       </PopoverTrigger>
-      <PopoverContent className="w-auto p-0 border-0" align="start">
+      <PopoverContent variant="bare" className="w-auto" align="start">
         {PickerComponent && (
           <PickerComponent
             onEmojiSelect={handleSelect}

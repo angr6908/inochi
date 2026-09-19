@@ -32,10 +32,18 @@ const buttonVariants = cva(
           "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-lg",
         "icon-lg": "size-9",
       },
+      // Layered on top of `variant` rather than folded into it: the muted
+      // treatment is used with both ghost and outline, and duplicating every
+      // variant to carry it would be the thing this axis exists to avoid.
+      tone: {
+        default: "",
+        muted: "text-muted-foreground hover:text-foreground",
+      },
     },
     defaultVariants: {
       variant: "default",
       size: "default",
+      tone: "default",
     },
   }
 )
@@ -44,15 +52,16 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  tone = "default",
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(buttonVariants({ variant, size, tone, className }))}
       {...props}
     />
   )
 }
 
-export { Button, buttonVariants }
+export { Button }

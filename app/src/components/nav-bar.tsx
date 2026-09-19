@@ -117,7 +117,8 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
               placeholder="Search posts..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="h-9 min-w-0 flex-1 rounded-xl border-foreground/10 bg-card dark:bg-card focus-visible:border-foreground/10 focus-visible:ring-0"
+              variant="soft"
+              className="h-9 min-w-0 flex-1"
             />
             <Button type="button" variant="ghost" size="sm" className="shrink-0" onClick={closeSearch}>
               Cancel
@@ -147,7 +148,7 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
                 <DropdownMenu>
                   <DropdownMenuTrigger
                     render={
-                      <Button variant="ghost" size="sm" className="max-w-[40vw] gap-1.5 font-medium" />
+                      <Button variant="ghost" size="sm" className="max-w-[40vw]" />
                     }
                   >
                     <span className="truncate">{user.username}</span>
@@ -163,7 +164,7 @@ export function NavBar({ scrolled }: { scrolled?: boolean }) {
                   </DropdownMenuContent>
                 </DropdownMenu>
               ) : loading ? (
-                <Skeleton className="h-8 w-20 rounded-md" />
+                <Skeleton className="h-8 w-20" />
               ) : (
                 <>
                   <Link href="/auth/signin" prefetch>

@@ -4,8 +4,6 @@ import { cn } from "@/lib/utils";
 export function InochiWordmark({ className }: { className?: string }) {
   return (
     <span
-      aria-label="inochi"
-      role="img"
       className={cn("inline-flex items-baseline whitespace-nowrap", className)}
       style={{ fontFamily: "var(--font-heading)" }}
     >
@@ -15,7 +13,7 @@ export function InochiWordmark({ className }: { className?: string }) {
             amount while the span itself still bottoms out on the baseline. */}
         <img
           src={INOCHI_WORDMARK_AVIF}
-          alt=""
+          alt="inochi"
           loading="eager"
           fetchPriority="high"
           decoding="sync"
