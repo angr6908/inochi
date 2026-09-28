@@ -12,7 +12,7 @@
 
 /* Fonts (all self-hosted):
    - Geist — UI chrome (via the geist npm package, set on <html> in layout.tsx).
-   - Roboto — post content + tags, the font YouTube serves. Loaded via
+   - Roboto — post content, the font YouTube serves. Loaded via
      next/font/google in layout.tsx.
    - Noto Sans JP — CJK glyphs (post content + UI fallback). Loaded via
      next/font/google in layout.tsx. */
@@ -107,7 +107,7 @@
   */
 
   /* UI chrome: Geist (var set by the geist npm package on <html>), CJK → Noto Sans JP.
-     Post content + tags: Roboto + Noto, matching YouTube's `Roboto, Noto, sans-serif`
+     Post content: Roboto + Noto, matching YouTube's `Roboto, Noto, sans-serif`
      stack. Roboto + Noto Sans JP load via next/font/google (vars set on <html>). */
   --font-sans: var(--font-geist-sans), var(--font-noto-sans-jp), sans-serif;
   --font-heading: var(--font-geist-sans), var(--font-noto-sans-jp), sans-serif;
@@ -275,7 +275,7 @@
   }
 }
 
-/* Post content + tags use Roboto + Noto (YouTube stack); the rest of the app is Geist.
+/* Post content uses Roboto + Noto (YouTube stack); the rest of the app is Geist.
    The :is(...) override also pulls markdown headings inside posts onto Roboto. */
 .font-content,
 .font-content :is(h1, h2, h3, h4, h5, h6) {

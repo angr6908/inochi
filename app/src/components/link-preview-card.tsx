@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import { Play } from "lucide-react";
@@ -14,6 +15,7 @@ import {
   siHuggingface, siArxiv, siPixiv,
 } from "simple-icons";
 import { LinkPreview } from "@/lib/api";
+import { previewHasText } from "@/lib/preview-text";
 import { brandMarkDark } from "@/lib/brand-color";
 import { cn } from "@/lib/utils";
 
@@ -22,13 +24,11 @@ function PreviewThumb({
   alt,
   priority,
   className,
-  style,
 }: {
   src?: string;
   alt: string;
   priority?: boolean;
   className?: string;
-  style?: React.CSSProperties;
 }) {
   return (
     <img
@@ -38,29 +38,18 @@ function PreviewThumb({
       fetchPriority={priority ? "high" : undefined}
       decoding="sync"
       className={className}
-      style={style}
     />
   );
 }
 
-// Box for the single-image card, derived from the thumbnail's real pixel size
-// so it's reserved at the right shape *before* the image loads (the CSS
-// `aspect-ratio` applies pre-load, so there's no layout shift or flash).
-// Anything narrower than 16:9 — portrait, square, and landscape shapes like 4:3
-// or 3:2 — sits in a 16:9 box: the image fits by height with space left and
-// right (`boxed` → the caller's object-contain), never cropped. 16:9 or wider
-// keeps its own ratio, which the image then fills exactly. Returns null when
-// dimensions are unknown — the caller then keeps the fixed 16:9 box.
-const BOXED_RATIO = 16 / 9; // everything narrower sits in a 16:9 box
-function cardBox(
-  w?: number | null,
-  h?: number | null,
-): { ratio: number; boxed: boolean } | null {
-  if (!w || !h || w <= 0 || h <= 0) return null;
-  const ratio = w / h;
-  return ratio < BOXED_RATIO
-    ? { ratio: BOXED_RATIO, boxed: true }
-    : { ratio, boxed: false };
+const COVER_MIN_RATIO = 1.3;
+
+const THUMB_BOX =
+  "relative block aspect-video w-[clamp(128px,30%,160px)] shrink-0 self-stretch overflow-hidden border-r border-border bg-muted";
+
+function thumbFit(w?: number | null, h?: number | null): "object-cover" | "object-contain" {
+  if (!w || !h || w <= 0 || h <= 0) return "object-cover";
+  return w / h >= COVER_MIN_RATIO ? "object-cover" : "object-contain";
 }
 
 function hostOf(url: string): string {
@@ -418,75 +407,173 @@ function BrandMark({ icon, className }: { icon: BrandIcon; className?: string })
   );
 }
 
-function TweetCard({ preview, avatar, priority }: { preview: LinkPreview; avatar: string; priority?: boolean }) {
+function PreviewSource({
+  preview,
+  brand,
+  site,
+  className,
+}: {
+  preview: LinkPreview;
+  brand: BrandIcon | null;
+  site: string;
+  className?: string;
+}) {
+  return (
+    <div className={cn("flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground", className)}>
+      {preview.author ? (
+        <>
+          {brand ? <BrandMark icon={brand} /> : <span className="shrink-0">By</span>}
+          <span className="min-w-0 truncate font-medium">{preview.author}</span>
+        </>
+      ) : brand ? (
+        <>
+          <BrandMark icon={brand} />
+          <span className="min-w-0 truncate font-medium">{site}</span>
+        </>
+      ) : (
+        <span className="min-w-0 truncate font-medium">{site}</span>
+      )}
+    </div>
+  );
+}
+
+function PreviewTags({ tags }: { tags?: string[] }) {
+  if (!tags || tags.length === 0) return null;
+  return (
+    <div className="relative z-10 ml-auto flex shrink-0 divide-x divide-border self-end overflow-hidden rounded-tl-md border-t border-l border-border">
+      {tags.map((tag) => (
+        <Link
+          key={tag}
+          href={`/?tag=${tag}`}
+          className="flex h-6 items-center bg-primary/10 px-2 font-sans text-xs leading-none font-medium text-primary transition-colors hover:bg-primary hover:text-primary-foreground"
+        >
+          {tag}
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function TweetCard({
+  preview,
+  avatar,
+  brand,
+  tags,
+  priority,
+}: {
+  preview: LinkPreview;
+  avatar: string;
+  brand: BrandIcon | null;
+  tags?: string[];
+  priority?: boolean;
+}) {
   const m = preview.author?.match(/^(.*?)\s*\((@[^)]+)\)\s*$/);
   const name = m ? m[1] : preview.author;
   const handle = m?.[2] ?? null;
   const text = preview.title ?? preview.description ?? null;
 
   return (
-    <a
-      href={preview.url}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="group block rounded-xl border border-border bg-card p-3.5 transition-colors hover:bg-accent/40"
-    >
-      <div className="flex items-center gap-2.5">
+    <div className="group relative overflow-hidden rounded-xl border border-border bg-card px-3 py-2.5 transition-colors hover:bg-accent/40">
+      <div className="flex min-h-5 min-w-0 items-center gap-1.5 text-sm leading-tight">
         <PreviewThumb
           src={avatar}
           alt=""
           priority={priority}
-          className="size-10 shrink-0 rounded-full bg-muted object-cover"
+          className="size-5 shrink-0 rounded-full bg-muted object-cover"
         />
-        <div className="flex min-w-0 flex-col leading-tight">
-          <span className="truncate text-[15px] font-semibold text-foreground">{name}</span>
-          {handle && <span className="truncate text-[15px] text-muted-foreground">{handle}</span>}
-        </div>
+        <a
+          href={preview.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="min-w-0 truncate font-semibold text-foreground after:absolute after:inset-0"
+        >
+          {name}
+        </a>
+        {handle && <span className="min-w-0 truncate text-muted-foreground">{handle}</span>}
+        {brand && <BrandMark icon={brand} className="ml-auto" />}
       </div>
 
       {text && (
-        <p className="mt-2.5 whitespace-pre-wrap break-words text-[15px] leading-normal text-foreground">
+        <p className="mt-1.5 line-clamp-4 whitespace-pre-wrap break-words text-sm leading-normal text-foreground">
           {text}
         </p>
       )}
-    </a>
+
+      {tags && tags.length > 0 && (
+        <div className="-mr-3 -mb-2.5 mt-1 flex">
+          <PreviewTags tags={tags} />
+        </div>
+      )}
+    </div>
   );
 }
 
-export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; priority?: boolean }) {
+export function LinkPreviewCard({
+  preview,
+  tags,
+  priority,
+}: {
+  preview: LinkPreview;
+  tags?: string[];
+  priority?: boolean;
+}) {
   const [playing, setPlaying] = useState(false);
   const image = preview.thumbnail ?? preview.image_url;
-  const visible = !!(preview.title || preview.description || preview.author);
 
-  if (!visible) return null;
+  if (!previewHasText(preview)) return null;
 
   const host = hostOf(preview.url);
   const site = preview.site_name ?? host;
   const brand = brandIconFor(host);
   const embed = getEmbed(preview.url);
+  const headline = preview.title ?? preview.description;
 
   const isTweet =
     /(^|\.)(x|twitter)\.com$/.test(host) && preview.image_url?.includes("/profile_images/");
   if (isTweet && image && preview.author) {
-    return <TweetCard preview={preview} avatar={image} priority={priority} />;
+    return <TweetCard preview={preview} avatar={image} brand={brand} tags={tags} priority={priority} />;
   }
 
-  // Served URLs for a multi-photo preview (e.g. a tweet with several photos),
-  // in order. Empty for the common single-image preview.
   const gridImages = (preview.images ?? [])
     .map((i) => i.thumbnail ?? i.image_url)
     .filter((src): src is string => !!src)
     .slice(0, 4);
 
-  const media = (() => {
-    if (playing && embed) {
-      return <EmbedPlayer embed={embed} />;
-    }
+  const details = (
+    <div className="relative flex min-w-0 flex-1 flex-col justify-between gap-1">
+      <a
+        href={preview.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="px-3 pt-2.5 after:absolute after:inset-0"
+      >
+        {headline ? (
+          <p className="line-clamp-2 text-sm font-medium leading-snug text-foreground [overflow-wrap:anywhere]">
+            {headline}
+          </p>
+        ) : (
+          <span className="sr-only">{site}</span>
+        )}
+      </a>
+      <div className="flex min-w-0 items-end">
+        <PreviewSource preview={preview} brand={brand} site={site} className="flex-1 px-3 pb-2.5" />
+        <PreviewTags tags={tags} />
+      </div>
+    </div>
+  );
 
+  if (playing && embed) {
+    return (
+      <div className="overflow-hidden rounded-xl border border-border bg-card">
+        <EmbedPlayer embed={embed} />
+        <div className="flex border-t border-border">{details}</div>
+      </div>
+    );
+  }
+
+  const thumb = (() => {
     if (!image && !embed) return null;
 
-    // Two or more photos (X never embeds) — lay them out in a grid like the
-    // source does, instead of showing only the first.
     if (gridImages.length >= 2 && !embed) {
       const n = gridImages.length;
       return (
@@ -494,27 +581,30 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
           href={preview.url}
           target="_blank"
           rel="noopener noreferrer"
-          className={cn(
-            "grid aspect-video w-full grid-cols-2 gap-px overflow-hidden bg-border",
-            n > 2 && "grid-rows-2",
-          )}
+          tabIndex={-1}
+          className={cn(THUMB_BOX, "grid grid-cols-2 gap-px bg-border", n > 2 && "grid-rows-2")}
         >
           {gridImages.map((src, idx) => (
             <PreviewThumb
               key={src}
               src={src}
-              alt={preview.title ?? ""}
+              alt=""
               priority={priority}
-              className={cn(
-                "h-full w-full object-cover",
-                // 3-up: the first photo fills the full-height left column.
-                n === 3 && idx === 0 && "row-span-2",
-              )}
+              className={cn("h-full w-full bg-muted object-cover", n === 3 && idx === 0 && "row-span-2")}
             />
           ))}
         </a>
       );
     }
+
+    const img = image ? (
+      <PreviewThumb
+        src={image}
+        alt=""
+        priority={priority}
+        className={cn("absolute inset-0 h-full w-full", thumbFit(preview.image_width, preview.image_height))}
+      />
+    ) : null;
 
     if (embed) {
       return (
@@ -522,102 +612,35 @@ export function LinkPreviewCard({ preview, priority }: { preview: LinkPreview; p
           type="button"
           onClick={() => setPlaying(true)}
           aria-label={`Play — ${preview.title ?? site}`}
-          className="relative block aspect-video w-full overflow-hidden bg-muted"
+          className={cn(THUMB_BOX, "cursor-pointer")}
         >
-          {image ? (
-            <img
-              src={image}
-              alt={preview.title ?? ""}
-              loading={priority ? "eager" : "lazy"}
-              fetchPriority={priority ? "high" : undefined}
-              decoding="sync"
-              className="h-full w-full object-contain"
-            />
-          ) : (
-            <div className="h-full w-full bg-muted" />
-          )}
-          <span className="pointer-events-none absolute inset-0 flex items-center justify-center">
-            <span className="pointer-events-auto flex h-12 w-12 cursor-pointer items-center justify-center rounded-full bg-black/55 text-white shadow-lg backdrop-blur-md transition-colors duration-200 hover:bg-black/70">
-              <Play className="h-[18px] w-[18px] translate-x-[1px] fill-current drop-shadow" />
+          {img}
+          <span className="absolute inset-0 flex items-center justify-center">
+            <span className="flex size-8 items-center justify-center rounded-full bg-black/55 text-white shadow-md backdrop-blur-md transition-colors duration-200 group-hover:bg-black/70">
+              <Play className="size-3.5 translate-x-px fill-current" />
             </span>
           </span>
         </button>
       );
     }
 
-    // Box reserved at its ratio before load (no flicker). Narrower than 16:9
-    // gets a 16:9 box and object-contain, so the whole image fits by height with
-    // the muted card filling the space left and right (no crop). 16:9 or wider
-    // keeps its own ratio and fills it with object-cover (box equals the image,
-    // so nothing is cropped). Unknown dimensions fall back to a fixed 16:9 box.
-    const box = cardBox(preview.image_width, preview.image_height);
     return (
       <a
         href={preview.url}
         target="_blank"
         rel="noopener noreferrer"
-        className="block overflow-hidden bg-muted"
+        tabIndex={-1}
+        className={THUMB_BOX}
       >
-        <PreviewThumb
-          src={image ?? undefined}
-          alt={preview.title ?? ""}
-          priority={priority}
-          className={cn(
-            "w-full",
-            box
-              ? box.boxed
-                ? "object-contain"
-                : "object-cover"
-              : "aspect-video object-contain",
-          )}
-          style={box ? { aspectRatio: String(box.ratio) } : undefined}
-        />
+        {img}
       </a>
     );
   })();
 
   return (
-    <div
-      className={cn(
-        "group overflow-hidden rounded-xl border border-border bg-card",
-        "transition-colors hover:bg-accent/40"
-      )}
-    >
-      {media}
-
-      <a
-        href={preview.url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className={cn("flex flex-col gap-1 p-3", media && "border-t border-border")}
-      >
-        {/* Title (for x.com this is the tweet content) */}
-        {preview.title && (
-          <p className="line-clamp-2 break-all text-base font-semibold leading-snug text-foreground">
-            {preview.title}
-          </p>
-        )}
-
-        {/* Footer row, left-aligned: the source site's brand logo leads
-            (standing in for "By"), then the author. With no author, show both
-            the logo and site name. An unmapped site falls back to the literal
-            "By" before an author, or to the site name on its own. */}
-        <div className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-          {preview.author ? (
-            <>
-              {brand ? <BrandMark icon={brand} /> : <span className="shrink-0">By</span>}
-              <span className="min-w-0 truncate font-medium">{preview.author}</span>
-            </>
-          ) : brand ? (
-            <>
-              <BrandMark icon={brand} />
-              <span className="min-w-0 truncate font-medium">{site}</span>
-            </>
-          ) : (
-            <span className="shrink-0 font-medium">{site}</span>
-          )}
-        </div>
-      </a>
+    <div className="group flex overflow-hidden rounded-xl border border-border bg-card transition-colors hover:bg-accent/40">
+      {thumb}
+      {details}
     </div>
   );
 }

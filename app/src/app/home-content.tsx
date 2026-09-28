@@ -13,6 +13,7 @@ import { consumeHomeLogoReset } from "@/lib/home-reset";
 import { preloadImages } from "@/lib/image-loader";
 import { pageImageUrls } from "@/lib/post-media";
 import { scrollToTop } from "@/lib/scroll";
+import { measureTimelineDay, setTimelineDay } from "@/lib/timeline-day";
 import { useTitle } from "@/lib/use-title";
 
 interface CachedPage {
@@ -273,6 +274,31 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  useEffect(() => {
+    let frame = 0;
+    const schedule = () => {
+      if (!frame) {
+        frame = requestAnimationFrame(() => {
+          frame = 0;
+          measureTimelineDay();
+        });
+      }
+    };
+    window.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      window.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      if (frame) cancelAnimationFrame(frame);
+      setTimelineDay(null);
+    };
+  }, []);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(measureTimelineDay);
+    return () => cancelAnimationFrame(frame);
+  }, [page, loadedPages]);
+
   // The tag the mounted content represents (`null` = nothing loaded yet). Reload
   // whenever the URL's tag diverges from it — e.g. when Next's router cache
   // serves a stale page payload so `key` doesn't change and this instance isn't
@@ -351,6 +377,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
           {[...loadedPages].map(([pn, pp]) => (
             <div key={pn} hidden={pn !== page}>
               <PostFeed
+                timeline
                 posts={pp}
                 onUpdate={reloadCurrent}
                 pageOfPost={pageOfPost}

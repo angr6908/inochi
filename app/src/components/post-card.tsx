@@ -24,6 +24,8 @@ import { PostBody } from "./post-body";
 import { ImageGallery } from "./image-gallery";
 import { ImageEditGrid } from "./image-edit-grid";
 import { LinkPreviewCard } from "./link-preview-card";
+import { EchoLabel } from "./timeline";
+import { splitPreviewText } from "@/lib/preview-text";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Reply, Pencil, Trash2, MoreHorizontal, Link2, Link2Off, ImagePlus } from "lucide-react";
@@ -94,27 +96,28 @@ const GAP_UNITS: [string, number][] = [
 // Constructing an Intl.NumberFormat is the expensive part; the set of units is
 // fixed, so each one's formatter is built on first use and then reused.
 const gapFormatters = new Map<string, Intl.NumberFormat>();
-function gapFormatter(unit: string) {
-  let f = gapFormatters.get(unit);
+function gapFormatter(unit: string, unitDisplay: "long" | "short") {
+  const key = `${unit}:${unitDisplay}`;
+  let f = gapFormatters.get(key);
   if (!f) {
     f = new Intl.NumberFormat("en", {
       style: "unit",
       unit: unit as Intl.NumberFormatOptions["unit"],
-      unitDisplay: "long",
+      unitDisplay,
     });
-    gapFormatters.set(unit, f);
+    gapFormatters.set(key, f);
   }
   return f;
 }
 
-function formatGap(fromDateStr: string, toDateStr: string): string {
+function formatGap(fromDateStr: string, toDateStr: string, unitDisplay: "long" | "short" = "long"): string {
   const from = new Date(fromDateStr.replace(" ", "T") + "Z").getTime();
   const to = new Date(toDateStr.replace(" ", "T") + "Z").getTime();
   const seconds = Math.max(0, Math.round((to - from) / 1000));
   for (const [unit, secs] of GAP_UNITS) {
     if (seconds >= secs || unit === "second") {
       const n = Math.round(seconds / secs);
-      return gapFormatter(unit).format(n);
+      return gapFormatter(unit, unitDisplay).format(n);
     }
   }
   return "0 seconds";
@@ -160,9 +163,10 @@ interface PostCardProps {
   /** Also offer the echo action inside the actions menu (feed views). Only takes
    *  effect for logged-in viewers, who always get it there. */
   echoInMenu?: boolean;
+  timeline?: boolean;
 }
 
-export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost, hideUsername, onEcho, onDelete, className, join, highlighted, borderTop, priority, echoVisible = true, echoInMenu }: PostCardProps) {
+export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost, hideUsername, onEcho, onDelete, className, join, highlighted, borderTop, priority, echoVisible = true, echoInMenu, timeline }: PostCardProps) {
   const { user } = useAuth();
   const router = useRouter();
   const isOwner = user?.id === post.user_id;
@@ -180,8 +184,12 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
         ? [post.parent_post]
         : [];
   const showReference = !hideParent && quoteChain.length > 0;
-  const hideOwnUsername = hideUsername || (showReference && sameAuthor);
+  const echoParent = timeline ? post.parent_post : null;
+  const hideOwnUsername = timeline
+    ? !!echoParent && sameAuthor
+    : hideUsername || (showReference && sameAuthor);
   const hasMedia = post.images.length > 0 || post.link_previews.length > 0;
+  const body = splitPreviewText(post.content, post.link_previews);
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [editContent, setEditContent] = useState(post.content);
@@ -333,29 +341,38 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
     else router.push(echoHref);
   };
 
-  return (
-    <Card
-      id={post.id}
-      size="flush"
-      join={join}
-      highlighted={highlighted}
-      borderTop={borderTop}
-      className={cn("scroll-mt-20", className)}
-    >
-      <CardContent padding="box">
-        {/* Header */}
-        {/* 10px below the header. With no text the empty content div collapses,
-            so this collapses with the inner-card wrapper's mt-[9px]; mb-2.5 (10px)
-            wins, keeping header→card at 10px to the border (border not counted),
-            while the wrapper's 9px only governs content-text→card (border counted). */}
-        {/* min-h-4 (16px) pins the row height. It is already the height the
-            action buttons give it (h-7 = 28px against the -my-1.5 below), but
-            they don't always render: a logged-out viewer on a post with no
-            echoes gets neither the echo button nor the menu, and the row would
-            then shrink to the 14px username line, lifting everything above the
-            content by 1px. The floor keeps the top spacing identical for every
-            viewer, which is what lets it be matched against the bottom. */}
-        <div className="mb-2.5 flex min-h-4 items-center gap-1.5 text-sm">
+  const inner = (
+    <>
+      {/* Header */}
+      {/* 10px below the header. With no text the empty content div collapses,
+          so this collapses with the inner-card wrapper's mt-[9px]; mb-2.5 (10px)
+          wins, keeping header→card at 10px to the border (border not counted),
+          while the wrapper's 9px only governs content-text→card (border counted). */}
+      {/* min-h-4 (16px) pins the row height. It is already the height the
+          action buttons give it (h-7 = 28px against the -my-1.5 below), but
+          they don't always render: a logged-out viewer on a post with no
+          echoes gets neither the echo button nor the menu, and the row would
+          then shrink to the 14px username line, lifting everything above the
+          content by 1px. The floor keeps the top spacing identical for every
+          viewer, which is what lets it be matched against the bottom. */}
+      <div className="mb-2.5 flex min-h-4 items-center gap-1.5 text-sm">
+        {timeline ? (
+          <span className="flex min-w-0 items-center gap-1.5">
+            {!hideOwnUsername && <span className="font-medium leading-none">{post.username}</span>}
+            {echoParent && (
+              <>
+                {!hideOwnUsername && (
+                  <span aria-hidden className="size-[2px] shrink-0 bg-muted-foreground/50" />
+                )}
+                <EchoLabel
+                  gap={formatGap(echoParent.created_at, post.created_at, "short")}
+                  author={sameAuthor ? undefined : echoParent.username}
+                  onJump={parentLink ? () => onJumpToPost?.(parentLink.id) : undefined}
+                />
+              </>
+            )}
+          </span>
+        ) : (
           <span className="flex items-center gap-1.5">
             {!hideOwnUsername && (
               <>
@@ -371,130 +388,138 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
               <TimeAgo date={post.created_at} />
             </span>
           </span>
+        )}
 
-          {/* The action buttons (h-7 / size-7 = 28px) are taller than the
-              username line, so in this items-center row they'd inflate its
-              height and push the username down — leaving more space above it
-              than the card leaves below its content. The negative vertical
-              margin stops the buttons from dictating the row height, dropping
-              the header flush against the top padding without moving the buttons
-              relative to the text. It mirrors the row's own mb-1.5, so the
-              buttons' overflow ends exactly at the content edge — never into it. */}
-          <div className="-my-1.5 ml-auto flex items-center gap-0.5">
-            {/* The echo button opens an inline composer for this post on the
-                thread page, or navigates to its root thread (and opens the
-                composer there) from anywhere else. In feed views it lives in
-                the actions menu instead. */}
-            {echoVisible && (
-              <Button
-                variant="ghost"
-                size="sm"
-                tone="muted"
-                type="button"
-                aria-label="Echo"
-                title="Echo"
-                onClick={handleEcho}
+        {/* The action buttons (h-7 / size-7 = 28px) are taller than the
+            username line, so in this items-center row they'd inflate its
+            height and push the username down — leaving more space above it
+            than the card leaves below its content. The negative vertical
+            margin stops the buttons from dictating the row height, dropping
+            the header flush against the top padding without moving the buttons
+            relative to the text. It mirrors the row's own mb-1.5, so the
+            buttons' overflow ends exactly at the content edge — never into it. */}
+        <div className="-my-1.5 ml-auto flex items-center gap-0.5">
+          {/* The echo button opens an inline composer for this post on the
+              thread page, or navigates to its root thread (and opens the
+              composer there) from anywhere else. In feed views it lives in
+              the actions menu instead. */}
+          {echoVisible && (
+            <Button
+              variant="ghost"
+              size="sm"
+              tone="muted"
+              type="button"
+              aria-label="Echo"
+              title="Echo"
+              onClick={handleEcho}
+            >
+              <Reply className="size-4" />
+              {hasFollowups && (
+                <span className="text-xs tabular-nums">{post.followup_count}</span>
+              )}
+            </Button>
+          )}
+
+          {(isOwner || echoMenuItem) && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    tone="muted"
+                    aria-label="Post actions"
+                  />
+                }
               >
-                <Reply className="size-4" />
-                {hasFollowups && (
-                  <span className="text-xs tabular-nums">{post.followup_count}</span>
+                <MoreHorizontal className="size-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-32">
+                {echoMenuItem && (
+                  <DropdownMenuItem onClick={handleEcho}>
+                    <Reply className="size-4" />
+                    Echo
+                    {hasFollowups && (
+                      <span className="ml-auto text-xs tabular-nums text-muted-foreground">
+                        {post.followup_count}
+                      </span>
+                    )}
+                  </DropdownMenuItem>
                 )}
-              </Button>
-            )}
-
-            {(isOwner || echoMenuItem) && (
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      tone="muted"
-                      aria-label="Post actions"
-                    />
-                  }
-                >
-                  <MoreHorizontal className="size-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end" className="min-w-32">
-                  {echoMenuItem && (
-                    <DropdownMenuItem onClick={handleEcho}>
-                      <Reply className="size-4" />
-                      Echo
-                      {hasFollowups && (
-                        <span className="ml-auto text-xs tabular-nums text-muted-foreground">
-                          {post.followup_count}
-                        </span>
-                      )}
+                {isOwner && (
+                  <>
+                    <DropdownMenuItem onClick={openEdit}>
+                      <Pencil className="size-4" />
+                      Edit
                     </DropdownMenuItem>
-                  )}
-                  {isOwner && (
-                    <>
-                      <DropdownMenuItem onClick={openEdit}>
-                        <Pencil className="size-4" />
-                        Edit
-                      </DropdownMenuItem>
-                      <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
-                        <Trash2 className="size-4" />
-                        Delete
-                      </DropdownMenuItem>
-                    </>
-                  )}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-          </div>
+                    <DropdownMenuItem variant="destructive" onClick={() => setDeleteOpen(true)}>
+                      <Trash2 className="size-4" />
+                      Delete
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
+      </div>
 
-        {/* Content */}
-        {/* When the text is the last block, its distance to the card's bottom is
-            matched to the header's distance to the card's top — measured to the
-            ink, not to the boxes, because the two ends carry very different
-            amounts of built-in slack. The header is `leading-none`, so its
-            glyphs start ~2px under its box top; a content line is 15px/1.625, so
-            ~7.4px of descent + half-leading sits under its last baseline. Pull
-            the block down by 4px (16px padding - 4 = a 12px box gap) and both
-            ends read the same: 19.1px from the border to the header's cap/digit
-            tops, 19.4px from the last baseline down to the border. Lines ending
-            in a descender come 3.2px closer, which is content-dependent and not
-            worth chasing — spacing for it would leave every other post
-            bottom-heavy. Scoped to :last-child so it never collapses the spacing
-            when media/reference actually follows. */}
-        <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[4px]">
-          <PostBody content={post.content} priority={priority} />
-        </div>
+      {/* Content */}
+      {/* When the text is the last block, its distance to the card's bottom is
+          matched to the header's distance to the card's top — measured to the
+          ink, not to the boxes, because the two ends carry very different
+          amounts of built-in slack. The header is `leading-none`, so its
+          glyphs start ~2px under its box top; a content line is 15px/1.625, so
+          ~7.4px of descent + half-leading sits under its last baseline. Pull
+          the block down by 4px (16px padding - 4 = a 12px box gap) and both
+          ends read the same: 19.1px from the border to the header's cap/digit
+          tops, 19.4px from the last baseline down to the border. Lines ending
+          in a descender come 3.2px closer, which is content-dependent and not
+          worth chasing — spacing for it would leave every other post
+          bottom-heavy. Scoped to :last-child so it never collapses the spacing
+          when media/reference actually follows. */}
+      <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[4px]">
+        <PostBody content={body.text} priority={priority} />
+      </div>
 
-        {/* Images, link previews and the reference card — the "cards inside the
-            card". The wrapper owns their spacing. Only the content-text→first-card
-            gap counts that card's 1px border: mt-[9px] (+ border = 10px to its
-            content). Everything else is 10px to the border edge, border not
-            counted: gap-2.5 (10px) between cards, and header→first-card when there
-            is no text (the header's mb-2.5 wins the margin collapse over this
-            mt-[9px]). The wrapper sits on the full p-4 padding, so the last card
-            is 16px off the mother card bottom; the reference card matches that
-            above itself (see its own mt below). ImageGallery renders nothing when
-            there are no images, so it adds no gap. */}
-        {(hasMedia || showReference) && (
-          <div className="mt-[9px] flex flex-col gap-2.5">
-            <ImageGallery images={post.images} priority={priority} />
+      {/* Images, link previews and the reference card — the "cards inside the
+          card". The wrapper owns their spacing. Only the content-text→first-card
+          gap counts that card's 1px border: mt-[9px] (+ border = 10px to its
+          content). Everything else is 10px to the border edge, border not
+          counted: gap-2.5 (10px) between cards, and header→first-card when there
+          is no text (the header's mb-2.5 wins the margin collapse over this
+          mt-[9px]). The wrapper sits on the full p-4 padding, so the last card
+          is 16px off the mother card bottom; the reference card matches that
+          above itself (see its own mt below). ImageGallery renders nothing when
+          there are no images, so it adds no gap. */}
+      {(hasMedia || showReference) && (
+        <div className="mt-[9px] flex flex-col gap-2.5">
+          <ImageGallery images={post.images} priority={priority} />
 
-            {post.link_previews.map((lp) => (
-              <LinkPreviewCard key={lp.url} preview={lp} priority={priority} />
-            ))}
+          {post.link_previews.map((lp) => (
+            <LinkPreviewCard
+              key={lp.url}
+              preview={lp}
+              tags={lp.url === body.taggedUrl ? body.tags : undefined}
+              priority={priority}
+            />
+          ))}
 
-            {/* Reference card — the quoted thread this follow-up replies to: the
-                whole ancestor chain (root-first) merged into one quote, or just the
-                immediate parent. Each entry is clickable via a stretched overlay
-                link (can't wrap in <a> because PostContent renders its own links).
-                When media
-                sits above it, mt-[6px] (on top of the wrapper's gap-2.5 = 10px)
-                makes the gap above the reference 16px, matching its 16px gap down
-                to the mother card bottom — framing it symmetrically. With no media
-                above, it's the content-text→card gap (mt-[9px]) and this mt does
-                not apply. */}
-            {showReference && (
-              <div className={cn("relative overflow-hidden rounded-lg border border-border/60 bg-muted/40", hasMedia && "mt-[6px]")}>
-                {quoteChain.map((q, qi) => (
+          {/* Reference card — the quoted thread this follow-up replies to: the
+              whole ancestor chain (root-first) merged into one quote, or just the
+              immediate parent. Each entry is clickable via a stretched overlay
+              link (can't wrap in <a> because PostContent renders its own links).
+              When media
+              sits above it, mt-[6px] (on top of the wrapper's gap-2.5 = 10px)
+              makes the gap above the reference 16px, matching its 16px gap down
+              to the mother card bottom — framing it symmetrically. With no media
+              above, it's the content-text→card gap (mt-[9px]) and this mt does
+              not apply. */}
+          {showReference && (
+            <div className={cn("relative overflow-hidden rounded-lg border border-border/60 bg-muted/40", hasMedia && "mt-[6px]")}>
+              {quoteChain.map((q, qi) => {
+                const quoted = splitPreviewText(q.content, q.link_previews);
+                return (
                   <div
                     key={q.id}
                     className={cn(
@@ -527,7 +552,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                         bottom (or the next entry's divider) as the quoted
                         header's ink sits below its top. */}
                     <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[4px] [&_a]:relative [&_a]:z-20">
-                      <PostContent content={q.content} />
+                      <PostContent content={quoted.text} />
                     </div>
                     {/* Same rhythm one level deeper: content-text→first-card counts
                         its border (mt-[9px]); cards are 10px apart (gap-2.5). z-20
@@ -537,164 +562,196 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                       <div className="relative z-20 mt-[9px] flex flex-col gap-2.5">
                         <ImageGallery images={q.images} />
                         {q.link_previews.map((lp) => (
-                          <LinkPreviewCard key={lp.url} preview={lp} />
+                          <LinkPreviewCard
+                            key={lp.url}
+                            preview={lp}
+                            tags={lp.url === quoted.taggedUrl ? quoted.tags : undefined}
+                          />
                         ))}
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
-        {/* Compact echo reference — shown when the quoted parent is already
-            elsewhere in the feed (further down this page or on another loaded
-            one), not the adjacent card. Jumps to it, naming its author when it
-            isn't this one, and notes how long after it this post was made, so the
-            echo stays legible without repeating the content. */}
-        {parentLink && !showReference && (
-          <button
-            type="button"
-            onClick={() => onJumpToPost?.(parentLink.id)}
-            aria-label="Jump to the echoed post"
-            className="mt-3.5 inline-flex w-fit items-center gap-1.5 text-sm leading-none text-muted-foreground transition-colors hover:text-foreground"
-          >
-            <Reply className="size-3.5 shrink-0" />
-            <span className="leading-none">
-              Echoing a post{parentLink.username ? ` from ${parentLink.username}` : ""} after{" "}
-              {formatGap(parentLink.created_at, post.created_at)}
-            </span>
-          </button>
-        )}
+      {/* Compact echo reference — shown when the quoted parent is already
+          elsewhere in the feed (further down this page or on another loaded
+          one), not the adjacent card. Jumps to it, naming its author when it
+          isn't this one, and notes how long after it this post was made, so the
+          echo stays legible without repeating the content. */}
+      {parentLink && !showReference && !timeline && (
+        <button
+          type="button"
+          onClick={() => onJumpToPost?.(parentLink.id)}
+          aria-label="Jump to the echoed post"
+          className="mt-3.5 inline-flex w-fit items-center gap-1.5 text-sm leading-none text-muted-foreground transition-colors hover:text-foreground"
+        >
+          <Reply className="size-3.5 shrink-0" />
+          <span className="leading-none">
+            Echoing a post{parentLink.username ? ` from ${parentLink.username}` : ""} after{" "}
+            {formatGap(parentLink.created_at, post.created_at)}
+          </span>
+        </button>
+      )}
 
-        {/* Owner dialogs (opened from the actions menu) */}
-        {isOwner && (
-          <>
-            <Dialog open={editOpen} onOpenChange={setEditOpen}>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Edit post</DialogTitle>
-                </DialogHeader>
-                {/* The field grows with its content (`field-sizing-content`),
-                    so `rows` is only a floor — a long post would otherwise
-                    inflate the dialog past the viewport. Cap it and let the
-                    text scroll inside the field, keeping the image and echo
-                    controls below it in reach. */}
-                <Textarea
-                  value={editContent}
-                  onChange={(e) => setEditContent(e.target.value)}
-                  rows={5}
-                  font="content"
-                  className="max-h-[45dvh] max-w-full overflow-x-hidden [overflow-wrap:anywhere]"
+      {/* Owner dialogs (opened from the actions menu) */}
+      {isOwner && (
+        <>
+          <Dialog open={editOpen} onOpenChange={setEditOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Edit post</DialogTitle>
+              </DialogHeader>
+              {/* The field grows with its content (`field-sizing-content`),
+                  so `rows` is only a floor — a long post would otherwise
+                  inflate the dialog past the viewport. Cap it and let the
+                  text scroll inside the field, keeping the image and echo
+                  controls below it in reach. */}
+              <Textarea
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                rows={5}
+                font="content"
+                className="max-h-[45dvh] max-w-full overflow-x-hidden [overflow-wrap:anywhere]"
+              />
+
+              {/* Image controls: reorder/remove existing or newly-added
+                  images, and add more. */}
+              <div className="flex flex-col gap-2">
+                <ImageEditGrid
+                  images={editImages}
+                  onReorder={moveEditImage}
+                  onRemove={removeEditImage}
                 />
-
-                {/* Image controls: reorder/remove existing or newly-added
-                    images, and add more. */}
-                <div className="flex flex-col gap-2">
-                  <ImageEditGrid
-                    images={editImages}
-                    onReorder={moveEditImage}
-                    onRemove={removeEditImage}
+                <div>
+                  <input
+                    ref={editFileRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={handleEditFiles}
                   />
-                  <div>
-                    <input
-                      ref={editFileRef}
-                      type="file"
-                      accept="image/*"
-                      multiple
-                      className="hidden"
-                      onChange={handleEditFiles}
+                  <Button
+                    variant="outline"
+                    size="default"
+                    tone="muted"
+                    type="button"
+                    onClick={() => editFileRef.current?.click()}
+                  >
+                    <ImagePlus className="size-4" />
+                    Add image
+                  </Button>
+                </div>
+              </div>
+
+              {/* Echo link controls: make this post an echo of another, or
+                  unlink it into an independent post. */}
+              <div className="flex flex-col gap-2">
+                {parentSummary ? (
+                  <div className="flex min-w-0 max-w-full flex-col gap-2 rounded-lg border border-border/60 bg-muted/40 p-2.5 sm:flex-row sm:items-start">
+                    <div className="min-w-0 flex-1">
+                      <div className="break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
+                        Echo of <span className="font-medium text-foreground">{parentSummary.username}</span>
+                      </div>
+                      <div className="mt-0.5 line-clamp-2 break-words font-content text-sm leading-snug [overflow-wrap:anywhere]">
+                        {parentSummary.content || "(no text)"}
+                      </div>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      tone="muted"
+                      type="button"
+                      onClick={handleUnlinkParent}
+                      className="shrink-0 self-start"
+                    >
+                      <Link2Off className="size-4" />
+                      Make independent
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      value={parentInput}
+                      onChange={(e) => setParentInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleLinkParent();
+                        }
+                      }}
+                      placeholder="Echo of… paste a post link or ID"
+                      className="h-9 flex-1"
                     />
                     <Button
                       variant="outline"
-                      size="default"
-                      tone="muted"
+                      size="lg"
                       type="button"
-                      onClick={() => editFileRef.current?.click()}
+                      onClick={handleLinkParent}
+                      disabled={linking || !parentInput.trim()}
+                      className="shrink-0"
                     >
-                      <ImagePlus className="size-4" />
-                      Add image
+                      <Link2 className="size-4" />
+                      {linking ? "Linking..." : "Link"}
                     </Button>
                   </div>
-                </div>
+                )}
+              </div>
 
-                {/* Echo link controls: make this post an echo of another, or
-                    unlink it into an independent post. */}
-                <div className="flex flex-col gap-2">
-                  {parentSummary ? (
-                    <div className="flex min-w-0 max-w-full flex-col gap-2 rounded-lg border border-border/60 bg-muted/40 p-2.5 sm:flex-row sm:items-start">
-                      <div className="min-w-0 flex-1">
-                        <div className="break-words text-xs text-muted-foreground [overflow-wrap:anywhere]">
-                          Echo of <span className="font-medium text-foreground">{parentSummary.username}</span>
-                        </div>
-                        <div className="mt-0.5 line-clamp-2 break-words font-content text-sm leading-snug [overflow-wrap:anywhere]">
-                          {parentSummary.content || "(no text)"}
-                        </div>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        tone="muted"
-                        type="button"
-                        onClick={handleUnlinkParent}
-                        className="shrink-0 self-start"
-                      >
-                        <Link2Off className="size-4" />
-                        Make independent
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-2">
-                      <Input
-                        value={parentInput}
-                        onChange={(e) => setParentInput(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleLinkParent();
-                          }
-                        }}
-                        placeholder="Echo of… paste a post link or ID"
-                        className="h-9 flex-1"
-                      />
-                      <Button
-                        variant="outline"
-                        size="lg"
-                        type="button"
-                        onClick={handleLinkParent}
-                        disabled={linking || !parentInput.trim()}
-                        className="shrink-0"
-                      >
-                        <Link2 className="size-4" />
-                        {linking ? "Linking..." : "Link"}
-                      </Button>
-                    </div>
-                  )}
-                </div>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
+                <Button
+                  onClick={handleEdit}
+                  disabled={saving || (!editContent.trim() && editImages.length === 0)}
+                >
+                  {saving ? "Saving..." : "Save"}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
 
-                <div className="flex justify-end gap-2">
-                  <Button variant="outline" onClick={() => setEditOpen(false)}>Cancel</Button>
-                  <Button
-                    onClick={handleEdit}
-                    disabled={saving || (!editContent.trim() && editImages.length === 0)}
-                  >
-                    {saving ? "Saving..." : "Save"}
-                  </Button>
-                </div>
-              </DialogContent>
-            </Dialog>
+          <ConfirmDialog
+            open={deleteOpen}
+            onOpenChange={setDeleteOpen}
+            title="Delete this post?"
+            description="This action cannot be undone."
+            onConfirm={handleDelete}
+          />
+        </>
+      )}
+    </>
+  );
 
-            <ConfirmDialog
-              open={deleteOpen}
-              onOpenChange={setDeleteOpen}
-              title="Delete this post?"
-              description="This action cannot be undone."
-              onConfirm={handleDelete}
-            />
-          </>
+  if (timeline) {
+    return (
+      <article
+        id={post.id}
+        className={cn(
+          "scroll-mt-24 rounded-sm",
+          highlighted && "outline outline-1 outline-primary outline-offset-4",
+          className,
         )}
-      </CardContent>
+      >
+        {inner}
+      </article>
+    );
+  }
+
+  return (
+    <Card
+      id={post.id}
+      size="flush"
+      join={join}
+      highlighted={highlighted}
+      borderTop={borderTop}
+      className={cn("scroll-mt-20", className)}
+    >
+      <CardContent padding="box">{inner}</CardContent>
     </Card>
   );
 }

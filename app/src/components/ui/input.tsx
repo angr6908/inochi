@@ -14,6 +14,8 @@ const inputVariants = cva(
         // raised surface (card fill, hairline border) and stays visually still
         // on focus instead of lighting a ring.
         soft: "rounded-xl border-foreground/10 bg-card focus-visible:border-foreground/10 focus-visible:ring-0 dark:bg-card",
+        search:
+          "rounded-full border-foreground/10 bg-card pr-7 pl-8 transition-colors focus-visible:border-foreground/20 focus-visible:ring-0 dark:bg-card",
       },
     },
     defaultVariants: { variant: "default" },

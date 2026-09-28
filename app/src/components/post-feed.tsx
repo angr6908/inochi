@@ -2,8 +2,11 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Post } from "@/lib/api";
+import { localTime } from "@/lib/timeline";
+import { useTz } from "@/lib/tz";
 import { cn } from "@/lib/utils";
 import { PostCard } from "./post-card";
+import { TimelineTime } from "./timeline";
 
 interface PostFeedProps {
   posts: Post[];
@@ -16,9 +19,16 @@ interface PostFeedProps {
   /** A post on this page to scroll to and highlight — set by the parent when the
    *  reader arrives here from another page. Every jump passes a new object. */
   focus?: { id: string } | null;
+  timeline?: boolean;
 }
 
 const CUSTOM_EMOJI = /:[a-z0-9_]*[a-z_][a-z0-9_]*:/i;
+
+function laneClass(echo: boolean, thread: boolean): string {
+  if (echo) return "left-[10px] w-[3px] rounded-full bg-primary/45";
+  if (thread) return "left-[11px] w-0 border-l border-dashed border-primary/60";
+  return "left-[11px] w-px bg-border";
+}
 
 function hasMedia(p: Post): boolean {
   return (
@@ -35,8 +45,9 @@ function hasMedia(p: Post): boolean {
 // this page, or on another loaded page — the echo instead gets a compact
 // reference (see `parentLink`) that jumps to it, so the connection stays clear
 // without repeating the content or disturbing the time order.
-export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus }: PostFeedProps) {
+export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus, timeline }: PostFeedProps) {
   const feedRef = useRef<HTMLDivElement>(null);
+  const tz = useTz();
   const idsOnPage = new Set(posts.map((p) => p.id));
   const priorityIndex = posts.findIndex(hasMedia);
 
@@ -118,77 +129,129 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus }: P
     targetIdx < posts.length - 1 &&
     posts[targetIdx + 1].root_post_id === posts[targetIdx].root_post_id;
 
+  const renderPost = (i: number, timeline = false) => {
+    const post = posts[i];
+    const next = posts[i + 1];
+    const prev = posts[i - 1];
+    const parent = post.parent_post;
+    const continuesPrev = !!(prev?.parent_post && prev.parent_post.id === post.id);
+    const sameThreadAsNext = !!(next && next.root_post_id === post.root_post_id);
+    const sameThreadAsPrev = !!(prev && prev.root_post_id === post.root_post_id);
+    const sameAuthorAsNext = sameThreadAsNext && next?.username === post.username;
+    const parentOnPage = !!(parent && idsOnPage.has(parent.id));
+    const parentAdjacent =
+      !!parent && (parent.id === next?.id || parent.id === prev?.id);
+    // The echoed original on another loaded page (typically the next one,
+    // where pagination split the thread): still reachable, so it counts as
+    // being in the feed — clicking the reference turns to that page.
+    const parentPage = parent && !parentOnPage ? pageOfPost?.(parent.id) : undefined;
+    const parentInFeed = parentOnPage || parentPage !== undefined;
+    // Drop the inline quote whenever the original is in the feed: as the
+    // adjacent card it reads as a joined thread, and anywhere else the
+    // reference below stands in for it.
+    const hideParent = parentAdjacent || parentInFeed;
+    // In the feed but not the neighbouring card: a slim link keeps the echo
+    // legible without repeating the quote or reordering the feed. It names
+    // the author when the echo answers someone else, since the two cards can
+    // sit far apart.
+    const parentLink =
+      parent && parentInFeed && (timeline || !parentAdjacent)
+        ? {
+            id: parent.id,
+            created_at: parent.created_at,
+            username: parent.username === post.username ? undefined : parent.username,
+          }
+        : undefined;
+    const echoIsNeighbor = continuesPrev;
+    // In feeds the echo button is only a way into a post's existing thread,
+    // so show it solely when the post has echoes that aren't already shown
+    // as an adjacent card.
+    const echoVisible = post.followup_count > 0 && !echoIsNeighbor;
+    return (
+      <PostCard
+        key={post.id}
+        post={post}
+        priority={i === priorityIndex}
+        echoVisible={echoVisible}
+        echoInMenu
+        hideParent={hideParent}
+        parentLink={parentLink}
+        onJumpToPost={jumpToPost}
+        hideUsername={sameAuthorAsNext}
+        onUpdate={onUpdate}
+        join={
+          sameThreadAsNext
+            ? sameThreadAsPrev
+              ? "both"
+              : "next"
+            : sameThreadAsPrev
+              ? "prev"
+              : "none"
+        }
+        highlighted={i === targetIdx}
+        // The highlighted card keeps the seam it would otherwise hand down,
+        // so the card below must not draw that border a second time.
+        borderTop={!(targetMergedNext && i === targetIdx + 1)}
+        className={
+          timeline
+            ? undefined
+            : cn(sameThreadAsNext ? "mb-0" : "mb-4", i === posts.length - 1 && "mb-0")
+        }
+        timeline={timeline}
+      />
+    );
+  };
+
+  if (!timeline) {
+    return <div ref={feedRef}>{posts.map((_, i) => renderPost(i))}</div>;
+  }
+
+  const dayKeys = posts.map((post) => localTime(post.created_at, tz).key);
+
   return (
     <div ref={feedRef}>
-      {posts.map((post, i) => {
-        const next = posts[i + 1];
-        const prev = posts[i - 1];
-        const parent = post.parent_post;
-        const continuesPrev = !!(prev?.parent_post && prev.parent_post.id === post.id);
-        const sameThreadAsNext = !!(next && next.root_post_id === post.root_post_id);
-        const sameThreadAsPrev = !!(prev && prev.root_post_id === post.root_post_id);
-        const sameAuthorAsNext = sameThreadAsNext && next?.username === post.username;
-        const parentOnPage = !!(parent && idsOnPage.has(parent.id));
-        const parentAdjacent =
-          !!parent && (parent.id === next?.id || parent.id === prev?.id);
-        // The echoed original on another loaded page (typically the next one,
-        // where pagination split the thread): still reachable, so it counts as
-        // being in the feed — clicking the reference turns to that page.
-        const parentPage = parent && !parentOnPage ? pageOfPost?.(parent.id) : undefined;
-        const parentInFeed = parentOnPage || parentPage !== undefined;
-        // Drop the inline quote whenever the original is in the feed: as the
-        // adjacent card it reads as a joined thread, and anywhere else the
-        // reference below stands in for it.
-        const hideParent = parentAdjacent || parentInFeed;
-        // In the feed but not the neighbouring card: a slim link keeps the echo
-        // legible without repeating the quote or reordering the feed. It names
-        // the author when the echo answers someone else, since the two cards can
-        // sit far apart.
-        const parentLink =
-          parent && parentInFeed && !parentAdjacent
-            ? {
-                id: parent.id,
-                created_at: parent.created_at,
-                username: parent.username === post.username ? undefined : parent.username,
-              }
-            : undefined;
-        const echoIsNeighbor = continuesPrev;
-        // In feeds the echo button is only a way into a post's existing thread,
-        // so show it solely when the post has echoes that aren't already shown
-        // as an adjacent card.
-        const echoVisible = post.followup_count > 0 && !echoIsNeighbor;
-        return (
-          <PostCard
-            key={post.id}
-            post={post}
-            priority={i === priorityIndex}
-            echoVisible={echoVisible}
-            echoInMenu
-            hideParent={hideParent}
-            parentLink={parentLink}
-            onJumpToPost={jumpToPost}
-            hideUsername={sameAuthorAsNext}
-            onUpdate={onUpdate}
-            join={
-              sameThreadAsNext
-                ? sameThreadAsPrev
-                  ? "both"
-                  : "next"
-                : sameThreadAsPrev
-                  ? "prev"
-                  : "none"
-            }
-            highlighted={i === targetIdx}
-            // The highlighted card keeps the seam it would otherwise hand down,
-            // so the card below must not draw that border a second time.
-            borderTop={!(targetMergedNext && i === targetIdx + 1)}
-            className={cn(
-              sameThreadAsNext ? "mb-0" : "mb-4",
-              i === posts.length - 1 && "mb-0",
-            )}
-          />
-        );
-      })}
+      <ol>
+        {posts.map((post, i) => {
+          const above = posts[i - 1];
+          const below = posts[i + 1];
+          const echoedAbove = !!above && above.parent_post_id === post.id;
+          const echoesBelow = !!below && post.parent_post_id === below.id;
+          const threadAbove = !!above && above.root_post_id === post.root_post_id;
+          const threadBelow = !!below && below.root_post_id === post.root_post_id;
+          const dayStart = i === 0 || dayKeys[i] !== dayKeys[i - 1];
+          const dayEnds = !!below && dayKeys[i + 1] !== dayKeys[i];
+          const last = i === posts.length - 1;
+          return (
+            <li key={post.id} data-timeline-day={post.created_at} className="flex">
+              <TimelineTime date={post.created_at} dayStart={dayStart} />
+              <div
+                className={cn(
+                  "relative min-w-0 flex-1 pl-7",
+                  !last && (threadBelow ? "pb-4" : dayEnds ? "pb-10" : "pb-6"),
+                )}
+              >
+                {!last && (
+                  <span aria-hidden className={cn("absolute top-2 -bottom-2", laneClass(echoesBelow, threadBelow))} />
+                )}
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute rounded-full",
+                    i === targetIdx
+                      ? "top-[3px] left-[6.5px] size-[10px] bg-primary ring-4 ring-primary/20"
+                      : post.parent_post_id
+                        ? "top-[4.5px] left-[8px] size-[7px] bg-primary ring-2 ring-background"
+                        : echoedAbove || threadAbove
+                          ? "top-[2.5px] left-[6px] size-[11px] border-2 border-primary bg-background"
+                          : "top-[3.5px] left-[7px] size-[9px] border-[1.5px] border-muted-foreground/60 bg-background",
+                  )}
+                />
+                {renderPost(i, true)}
+              </div>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }
