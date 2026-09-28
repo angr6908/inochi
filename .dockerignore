@@ -2,7 +2,4 @@
 .git/
 .github/
 core/target/
-app/node_modules/
-app/.next/
-app/next-env.d.ts
-app/tsconfig.tsbuildinfo
+app/

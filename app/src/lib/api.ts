@@ -2,6 +2,7 @@ export interface User {
   id: string;
   username: string;
   created_at: string;
+  is_admin: boolean;
 }
 
 export interface Post {
@@ -258,6 +259,17 @@ export const searchPosts = (q: string, page = 1, limit = 20) =>
   request<{ posts: Post[]; total: number; page: number; pages: number; matches?: number; post_pages?: Record<string, number> }>(
     `/api/search?q=${encodeURIComponent(q)}&page=${page}&limit=${limit}`
   );
+
+export interface FrontendStatus {
+  installed: string | null;
+  latest: string;
+  pinned: string | null;
+}
+
+export const getFrontendStatus = () => request<FrontendStatus>("/api/frontend");
+
+export const updateFrontend = () =>
+  request<{ installed: string }>("/api/frontend/update", { method: "POST" });
 
 // Link Preview
 export const fetchLinkPreview = (url: string) =>

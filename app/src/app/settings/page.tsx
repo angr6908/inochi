@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
+import { FrontendUpdateCard } from "@/components/frontend-update-card";
 import { toast } from "sonner";
 import { toastError } from "@/lib/utils";
 import { useTitle } from "@/lib/use-title";
@@ -189,6 +190,8 @@ export default function SettingsPage() {
           </form>
         </CardContent>
       </Card>
+
+      {user.is_admin && <FrontendUpdateCard />}
 
       <Card tone="destructive">
         <CardHeader><CardTitle tone="destructive">Delete Account</CardTitle></CardHeader>

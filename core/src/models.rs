@@ -34,6 +34,19 @@ pub struct UserPublic {
     pub id: String,
     pub username: String,
     pub created_at: String,
+    pub is_admin: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FrontendStatus {
+    pub installed: Option<String>,
+    pub latest: String,
+    pub pinned: Option<String>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct FrontendUpdate {
+    pub installed: String,
 }
 
 #[derive(Deserialize)]

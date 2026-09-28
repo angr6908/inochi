@@ -3,6 +3,7 @@ use uuid::Uuid;
 
 use crate::auth::create_token;
 use crate::db::{Db, DbExt};
+use crate::handlers::users::is_admin;
 use crate::models::{err, ApiError, AuthRequest, AuthResponse, UserPublic};
 
 pub async fn signup(
@@ -34,6 +35,7 @@ pub async fn signup(
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to load created user"))?
     };
 
+    let admin = is_admin(&db.conn(), &id);
     let token = create_token(&id)
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to create token"))?;
 
@@ -43,6 +45,7 @@ pub async fn signup(
             id,
             username: body.username.trim().to_string(),
             created_at,
+            is_admin: admin,
         },
     }))
 }
@@ -67,6 +70,7 @@ pub async fn signin(
         return Err(err(StatusCode::UNAUTHORIZED, "Invalid credentials"));
     }
 
+    let admin = is_admin(&db.conn(), &id);
     let token = create_token(&id)
         .map_err(|_| err(StatusCode::INTERNAL_SERVER_ERROR, "Failed to create token"))?;
 
@@ -76,6 +80,7 @@ pub async fn signin(
             id,
             username,
             created_at,
+            is_admin: admin,
         },
     }))
 }

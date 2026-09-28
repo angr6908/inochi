@@ -59,6 +59,8 @@ async fn main() {
         .allow_headers(Any);
 
     let api = Router::new()
+        .route("/api/frontend", get(handlers::frontend::status))
+        .route("/api/frontend/update", post(handlers::frontend::update))
         // Auth
         .route("/api/auth/signup", post(handlers::auth::signup))
         .route("/api/auth/signin", post(handlers::auth::signin))

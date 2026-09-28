@@ -28,6 +28,15 @@ fn verify_password(
     Ok(())
 }
 
+pub(crate) fn is_admin(conn: &rusqlite::Connection, user_id: &str) -> bool {
+    conn.query_row(
+        "SELECT id FROM users ORDER BY created_at, rowid LIMIT 1",
+        [],
+        |r| r.get::<_, String>(0),
+    )
+    .is_ok_and(|first| first == user_id)
+}
+
 /// Load a user's public profile by id.
 fn fetch_user(conn: &rusqlite::Connection, id: &str) -> rusqlite::Result<UserPublic> {
     conn.query_row(
@@ -38,6 +47,7 @@ fn fetch_user(conn: &rusqlite::Connection, id: &str) -> rusqlite::Result<UserPub
                 id: r.get(0)?,
                 username: r.get(1)?,
                 created_at: r.get(2)?,
+                is_admin: is_admin(conn, id),
             })
         },
     )
