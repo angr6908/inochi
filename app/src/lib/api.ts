@@ -255,7 +255,7 @@ export const deleteEmoji = (id: string) =>
 
 // Search
 export const searchPosts = (q: string, page = 1, limit = 20) =>
-  request<{ posts: Post[]; total: number; page: number; pages: number; matches?: number }>(
+  request<{ posts: Post[]; total: number; page: number; pages: number; matches?: number; post_pages?: Record<string, number> }>(
     `/api/search?q=${encodeURIComponent(q)}&page=${page}&limit=${limit}`
   );
 

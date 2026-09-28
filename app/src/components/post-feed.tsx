@@ -95,7 +95,7 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus, tim
   // the effect below: the effect owns DOM work (scroll, entrance animation),
   // and adjusting here avoids the extra render pass a setState-in-effect
   // queues. See "adjusting state when a prop changes" in the React docs.
-  const [seenFocus, setSeenFocus] = useState(focus);
+  const [seenFocus, setSeenFocus] = useState<typeof focus>(null);
   if (focus !== seenFocus) {
     setSeenFocus(focus);
     setHighlightId(focus ? focus.id : null);

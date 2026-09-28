@@ -1,11 +1,8 @@
 const preloaded = new Set<string>();
-const preloadQueue: string[] = [];
-// Mirrors preloadQueue for membership tests: preloadImages is called with a
-// whole page of urls at a time, and scanning the array for each one made that
-// quadratic.
-const queued = new Set<string>();
-const drainCallbacks: Array<() => void> = [];
-let preloading = false;
+const loading = new Set<string>();
+let stages: string[][] = [];
+
+const PRELOAD_WINDOW = 2;
 
 // A detached `new Image()` with no live reference can be garbage-collected
 // while its request is still in flight; when it shares a resource with a visible
@@ -13,14 +10,14 @@ let preloading = false;
 // re-decode — a flicker. Hold each preloader until it settles, then release it.
 const inflight = new Set<HTMLImageElement>();
 
-function preload(url: string, priority: "high" | "low", onSettle?: () => void) {
+function preload(url: string, onSettle: () => void) {
   const img = new Image();
-  img.setAttribute("fetchpriority", priority);
+  img.setAttribute("fetchpriority", "low");
   inflight.add(img);
   const done = () => {
     inflight.delete(img);
     preloaded.add(url);
-    onSettle?.();
+    onSettle();
   };
   img.onload = done;
   img.onerror = done;
@@ -28,56 +25,23 @@ function preload(url: string, priority: "high" | "low", onSettle?: () => void) {
 }
 
 function pumpPreload() {
-  if (preloading) return;
-  let url = preloadQueue.shift();
-  if (url) queued.delete(url);
-  while (url && preloaded.has(url)) {
-    url = preloadQueue.shift();
-    if (url) queued.delete(url);
-  }
-  if (!url) {
-    if (drainCallbacks.length) drainCallbacks.splice(0).forEach((cb) => cb());
-    return;
-  }
-  preloading = true;
-  preload(url, "low", () => {
-    preloading = false;
-    pumpPreload();
-  });
-}
-
-export function preloadHigh(...urls: string[]) {
-  for (const url of urls) {
-    if (preloaded.has(url)) continue;
-    preloaded.add(url);
-    preload(url, "high");
-  }
-}
-
-export function preloadImages(urls: string[], onDone?: () => void) {
-  for (const url of urls) {
-    if (!preloaded.has(url) && !queued.has(url)) {
-      preloadQueue.push(url);
-      queued.add(url);
+  while (stages.length > 0) {
+    const stage = stages[0];
+    while (stage.length > 0 && loading.size < PRELOAD_WINDOW) {
+      const url = stage.shift()!;
+      if (preloaded.has(url) || loading.has(url)) continue;
+      loading.add(url);
+      preload(url, () => {
+        loading.delete(url);
+        pumpPreload();
+      });
     }
+    if (stage.length > 0 || loading.size > 0) return;
+    stages.shift();
   }
-  if (onDone) {
-    if (preloadQueue.length === 0 && !preloading) onDone();
-    else drainCallbacks.push(onDone);
-  }
-  pumpPreload();
 }
 
 export type ImagePriority = "high" | "eager";
-
-const PREFETCH_FALLBACK_MS = 8000;
-
-function constrainedNetwork(): boolean {
-  const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } })
-    .connection;
-  if (!connection) return false;
-  return connection.saveData === true || ["slow-2g", "2g", "3g"].includes(connection.effectiveType ?? "");
-}
 
 function whenIdle(run: () => void) {
   const w = window as typeof window & { requestIdleCallback?: (cb: () => void) => number };
@@ -93,29 +57,49 @@ function afterVisibleImages(run: () => void) {
   const pending = [...document.querySelectorAll<HTMLImageElement>('main img[loading="eager"]')].filter(
     (img) => !img.complete && img.getClientRects().length > 0,
   );
-  let fired = false;
-  const fire = () => {
-    if (fired) return;
-    fired = true;
-    whenIdle(run);
-  };
   if (pending.length === 0) {
-    fire();
+    whenIdle(run);
     return;
   }
   let left = pending.length;
   const settle = () => {
     left -= 1;
-    if (left === 0) fire();
+    if (left === 0) afterVisibleImages(run);
   };
   for (const img of pending) {
     img.addEventListener("load", settle, { once: true });
     img.addEventListener("error", settle, { once: true });
   }
-  setTimeout(fire, PREFETCH_FALLBACK_MS);
 }
 
-export function prefetchImages(urls: string[]) {
-  if (typeof window === "undefined" || urls.length === 0 || constrainedNetwork()) return;
-  afterVisibleImages(() => preloadImages(urls));
+function currentPageImageUrls(): string[] {
+  return [...document.querySelectorAll<HTMLImageElement>("main img")]
+    .filter((img) => img.src && !img.complete && img.getClientRects().length > 0)
+    .map((img) => img.src);
+}
+
+let nextPageImageUrls: () => string[] = () => [];
+let prefetchGeneration = 0;
+let prefetchReady = false;
+
+function queuePrefetch() {
+  stages = [currentPageImageUrls(), nextPageImageUrls().map((url) => new URL(url, document.baseURI).href)];
+  pumpPreload();
+}
+
+export function prefetchImages(nextPage: () => string[]) {
+  if (typeof window === "undefined") return;
+  stages = [];
+  nextPageImageUrls = nextPage;
+  prefetchReady = false;
+  const generation = ++prefetchGeneration;
+  afterVisibleImages(() => {
+    if (generation !== prefetchGeneration) return;
+    prefetchReady = true;
+    queuePrefetch();
+  });
+}
+
+export function refreshPrefetch() {
+  if (prefetchReady) queuePrefetch();
 }

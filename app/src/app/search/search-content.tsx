@@ -6,9 +6,10 @@ import { searchPosts, Post } from "@/lib/api";
 import { PostFeed } from "@/components/post-feed";
 import { PostListSkeleton } from "@/components/post-list-skeleton";
 import { PostPagination } from "@/components/post-pagination";
-import { prefetchImages, preloadHigh, preloadImages } from "@/lib/image-loader";
-import { FIRST_SCREEN_POSTS, firstPostMediaUrls, pageImageUrls } from "@/lib/post-media";
+import { prefetchImages, refreshPrefetch } from "@/lib/image-loader";
+import { pageImageUrls } from "@/lib/post-media";
 import { preloadPostFonts } from "@/lib/font-preload";
+import { useTimelineTracking } from "@/lib/use-timeline-tracking";
 import { useTitle } from "@/lib/use-title";
 import { scrollToTop } from "@/lib/scroll";
 
@@ -18,9 +19,17 @@ export interface InitialSearch {
   pages: number;
   total: number;
   matches?: number;
+  post_pages?: Record<string, number>;
 }
 
-const pageCache = new Map<string, { posts: Post[]; pages: number; matches: number }>();
+interface CachedSearch {
+  posts: Post[];
+  pages: number;
+  matches: number;
+  post_pages?: Record<string, number>;
+}
+
+const pageCache = new Map<string, CachedSearch>();
 const cacheKey = (q: string, page: number) => `${q}:${page}`;
 
 function clearPageCache() {
@@ -32,9 +41,9 @@ function prefetchNeighbors(q: string, page: number, pages: number) {
     if (p < 1 || p > pages || pageCache.has(cacheKey(q, p))) continue;
     searchPosts(q, p)
       .then((r) => {
-        pageCache.set(cacheKey(q, r.page), { posts: r.posts, pages: r.pages, matches: r.matches ?? r.total });
+        pageCache.set(cacheKey(q, r.page), { posts: r.posts, pages: r.pages, matches: r.matches ?? r.total, post_pages: r.post_pages });
         preloadPostFonts(r.posts);
-        if (p === page + 1) prefetchImages(pageImageUrls(r.posts.slice(0, FIRST_SCREEN_POSTS)));
+        refreshPrefetch();
       })
       .catch(() => {});
   }
@@ -50,7 +59,11 @@ export function SearchContent({ initialQ, initial }: { initialQ: string; initial
   const [page, setPage] = useState(seed?.page ?? 1);
   const [pages, setPages] = useState(seed?.pages ?? 0);
   const [matches, setMatches] = useState(seed ? seed.matches ?? seed.total : 0);
+  const [postPages, setPostPages] = useState(seed?.post_pages ?? {});
   const [loading, setLoading] = useState(false);
+  const [focus, setFocus] = useState<{ page: number; id: string } | null>(null);
+  const pageOfPost = useCallback((id: string) => postPages[id], [postPages]);
+  useTimelineTracking(posts);
 
   const reqRef = useRef(0);
 
@@ -61,11 +74,11 @@ export function SearchContent({ initialQ, initial }: { initialQ: string; initial
 
     const cached = pageCache.get(cacheKey(query, p));
     if (cached) {
-      preloadHigh(...firstPostMediaUrls(cached.posts));
       setPosts(cached.posts);
       setPage(p);
       setPages(cached.pages);
       setMatches(cached.matches);
+      setPostPages(cached.post_pages ?? {});
       setLoading(false);
       prefetchNeighbors(query, p, cached.pages);
       return;
@@ -74,12 +87,12 @@ export function SearchContent({ initialQ, initial }: { initialQ: string; initial
     try {
       const res = await searchPosts(query, p);
       if (myReq !== reqRef.current) return;
-      pageCache.set(cacheKey(query, res.page), { posts: res.posts, pages: res.pages, matches: res.matches ?? res.total });
-      preloadHigh(...firstPostMediaUrls(res.posts));
+      pageCache.set(cacheKey(query, res.page), { posts: res.posts, pages: res.pages, matches: res.matches ?? res.total, post_pages: res.post_pages });
       setPosts(res.posts);
       setPage(res.page);
       setPages(res.pages);
       setMatches(res.matches ?? res.total);
+      setPostPages(res.post_pages ?? {});
       prefetchNeighbors(query, res.page, res.pages);
     } catch {
       // ignore
@@ -92,9 +105,9 @@ export function SearchContent({ initialQ, initial }: { initialQ: string; initial
   useEffect(() => {
     if (seededRef.current || !seed) return;
     seededRef.current = true;
-    pageCache.set(cacheKey(q, seed.page), { posts: seed.posts, pages: seed.pages, matches: seed.matches ?? seed.total });
-    preloadHigh(...firstPostMediaUrls(seed.posts));
-    prefetchNeighbors(q, seed.page, seed.pages);
+    const query = q.trim();
+    pageCache.set(cacheKey(query, seed.page), { posts: seed.posts, pages: seed.pages, matches: seed.matches ?? seed.total, post_pages: seed.post_pages });
+    prefetchNeighbors(query, seed.page, seed.pages);
   }, [seed, q]);
 
   const searched = useRef<string | null>(seed ? q : null);
@@ -106,12 +119,15 @@ export function SearchContent({ initialQ, initial }: { initialQ: string; initial
 
   useEffect(() => {
     if (posts.length === 0) return;
-    // Neighbor media is preloaded in prefetchNeighbors when its data lands; here
-    // we only warm the current page's fonts and images.
-    const run = () => {
-      preloadPostFonts(posts);
-      preloadImages(pageImageUrls(posts));
-    };
+    prefetchImages(() => {
+      const next = pageCache.get(cacheKey(q.trim(), page + 1));
+      return next ? pageImageUrls(next.posts, next.post_pages) : [];
+    });
+  }, [posts, q, page]);
+
+  useEffect(() => {
+    if (posts.length === 0) return;
+    const run = () => preloadPostFonts(posts);
     const w = window as typeof window & {
       requestIdleCallback?: (cb: () => void) => number;
       cancelIdleCallback?: (id: number) => void;
@@ -124,6 +140,14 @@ export function SearchContent({ initialQ, initial }: { initialQ: string; initial
     return () => clearTimeout(t);
   }, [posts]);
 
+  const changePage = (n: number, focusId?: string) => {
+    search(q, n);
+    setFocus(focusId ? { page: n, id: focusId } : null);
+    if (!focusId) scrollToTop();
+  };
+
+  const reloadCurrent = () => { clearPageCache(); setFocus(null); search(q, page); };
+
   return (
     <div className="space-y-4">
       {loading ? (
@@ -135,8 +159,15 @@ export function SearchContent({ initialQ, initial }: { initialQ: string; initial
           {matches > 0 && (
             <p className="text-sm text-muted-foreground">{matches} result{matches !== 1 ? "s" : ""}</p>
           )}
-          <PostFeed posts={posts} onUpdate={() => { clearPageCache(); search(q, page); }} />
-          <PostPagination page={page} pages={pages} onChange={(p) => { search(q, p); scrollToTop(); }} />
+          <PostFeed
+            timeline
+            posts={posts}
+            onUpdate={reloadCurrent}
+            pageOfPost={pageOfPost}
+            onJumpToPage={changePage}
+            focus={focus?.page === page ? focus : null}
+          />
+          <PostPagination page={page} pages={pages} onChange={changePage} />
         </>
       )}
     </div>

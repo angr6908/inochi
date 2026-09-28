@@ -5,7 +5,8 @@ use axum::{
 
 use crate::db::{Db, DbExt};
 use crate::handlers::posts::{
-    posts_page, query_id_roots, thread_cte, thread_ordered_select, thread_safe_page,
+    neighboring_post_pages, posts_page, query_id_roots, thread_cte, thread_ordered_select,
+    thread_safe_page,
 };
 use crate::models::*;
 
@@ -100,6 +101,12 @@ pub async fn search_posts(
     let (post_ids, pages) = thread_safe_page(&rows, page, limit);
 
     let mut resp = posts_page(&conn, &post_ids, total, page, pages);
+    let parent_ids = resp
+        .posts
+        .iter()
+        .filter_map(|post| post.parent_post_id.as_deref())
+        .collect();
+    resp.post_pages = neighboring_post_pages(&rows, page, limit, &parent_ids);
     resp.matches = Some(matches);
     Ok(Json(resp))
 }

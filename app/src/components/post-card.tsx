@@ -26,6 +26,7 @@ import { ImageEditGrid } from "./image-edit-grid";
 import { LinkPreviewCard } from "./link-preview-card";
 import { EchoLabel } from "./timeline";
 import { splitPreviewText } from "@/lib/preview-text";
+import { quoteChain } from "@/lib/post-media";
 import type { ImagePriority } from "@/lib/image-loader";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -178,13 +179,8 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
   const sameAuthor = post.parent_post?.username === post.username;
   // The quoted thread above this reply: the whole ancestor chain (root-first) when
   // available, else just the immediate parent — rendered as one merged quote.
-  const quoteChain =
-    post.ancestors && post.ancestors.length > 0
-      ? post.ancestors
-      : post.parent_post
-        ? [post.parent_post]
-        : [];
-  const showReference = !hideParent && quoteChain.length > 0;
+  const quotes = quoteChain(post);
+  const showReference = !hideParent && quotes.length > 0;
   const echoParent = timeline ? post.parent_post : null;
   const hideOwnUsername = timeline
     ? !!echoParent && sameAuthor
@@ -518,7 +514,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
               not apply. */}
           {showReference && (
             <div className={cn("relative overflow-hidden rounded-lg border border-border/60 bg-muted/40", hasMedia && "mt-[6px]")}>
-              {quoteChain.map((q, qi) => {
+              {quotes.map((q, qi) => {
                 const quoted = splitPreviewText(q.content, q.link_previews);
                 return (
                   <div
@@ -536,7 +532,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                     <div className="mb-2.5 flex min-h-4 items-center gap-1.5 text-sm">
                       {/* Drop the repeated name when this entry shares its author
                           with the one directly above it. */}
-                      {!(qi > 0 && quoteChain[qi - 1].username === q.username) && (
+                      {!(qi > 0 && quotes[qi - 1].username === q.username) && (
                         <>
                           <span className="font-medium leading-none">{q.username}</span>
                           <span aria-hidden className="size-[2px] shrink-0 bg-muted-foreground/50" />
@@ -553,7 +549,7 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                         bottom (or the next entry's divider) as the quoted
                         header's ink sits below its top. */}
                     <div className="font-content text-base leading-relaxed [&:last-child]:-mb-[4px] [&_a]:relative [&_a]:z-20">
-                      <PostContent content={quoted.text} />
+                      <PostContent content={quoted.text} priority={priority} />
                     </div>
                     {/* Same rhythm one level deeper: content-text→first-card counts
                         its border (mt-[9px]); cards are 10px apart (gap-2.5). z-20
@@ -561,12 +557,13 @@ export function PostCard({ post, onUpdate, hideParent, parentLink, onJumpToPost,
                         stays clickable (lightbox / preview links). */}
                     {(q.images.length > 0 || q.link_previews.length > 0) && (
                       <div className="relative z-20 mt-[9px] flex flex-col gap-2.5">
-                        <ImageGallery images={q.images} />
+                        <ImageGallery images={q.images} priority={priority} />
                         {q.link_previews.map((lp) => (
                           <LinkPreviewCard
                             key={lp.url}
                             preview={lp}
                             tags={lp.url === quoted.taggedUrl ? quoted.tags : undefined}
+                            priority={priority}
                           />
                         ))}
                       </div>

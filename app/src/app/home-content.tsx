@@ -10,10 +10,10 @@ import { getPosts, loadEmojis, Post } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { postFontsReady, preloadPostFonts } from "@/lib/font-preload";
 import { consumeHomeLogoReset } from "@/lib/home-reset";
-import { prefetchImages } from "@/lib/image-loader";
-import { FIRST_SCREEN_POSTS, pageImageUrls } from "@/lib/post-media";
+import { prefetchImages, refreshPrefetch } from "@/lib/image-loader";
+import { pageImageUrls } from "@/lib/post-media";
 import { scrollToTop } from "@/lib/scroll";
-import { measureTimelineDay, setTimelineDay, updateTimelineMotion } from "@/lib/timeline-day";
+import { useTimelineTracking } from "@/lib/use-timeline-tracking";
 import { useTitle } from "@/lib/use-title";
 
 interface CachedPage {
@@ -78,7 +78,7 @@ function prefetchNeighbors(page: number, tag: string | undefined, pages: number)
           post_pages: r.post_pages,
         });
         preloadPostFonts(r.posts);
-        if (p === page + 1) prefetchImages(pageImageUrls(r.posts.slice(0, FIRST_SCREEN_POSTS)));
+        refreshPrefetch();
       })
       .catch(() => {})
       .finally(() => {
@@ -131,13 +131,14 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
   const pageOfPost = useMemo(() => {
     const at = new Map<string, number>(Object.entries(postPages));
     for (const [p, mountedPosts] of loadedPages) {
+      if (Math.abs(p - page) > 1) continue;
       // `loadedPages` may briefly retain another tag's pages during navigation.
       // Only index a page when it is the active feed's cached object.
       if (pageCache.get(cacheKey(activeTag, p))?.posts !== mountedPosts) continue;
       for (const post of mountedPosts) at.set(post.id, p);
     }
     return (id: string) => at.get(id);
-  }, [activeTag, loadedPages, postPages]);
+  }, [activeTag, loadedPages, page, postPages]);
 
   // The post to scroll to and highlight after turning to another page (set when
   // an echo's reference points off this page). A fresh object per jump, so the
@@ -148,8 +149,14 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
 
   useEffect(() => {
     if (posts.length === 0) return;
-    // Neighbor media is preloaded in prefetchNeighbors when its data lands; here
-    // we only warm the current page's fonts.
+    prefetchImages(() => {
+      const next = pageCache.get(cacheKey(activeTag, page + 1));
+      return next ? pageImageUrls(next.posts, next.post_pages) : [];
+    });
+  }, [posts, activeTag, page]);
+
+  useEffect(() => {
+    if (posts.length === 0) return;
     const run = () => preloadPostFonts(posts);
     const w = window as typeof window & {
       requestIdleCallback?: (cb: () => void) => number;
@@ -226,6 +233,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     clearPageCache();
     setLoadedPages(new Map());
     setPostPages({});
+    setFocus(null);
   }, []);
 
   const seededRef = useRef(false);
@@ -274,34 +282,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  useEffect(() => {
-    let frame = 0;
-    const schedule = () => {
-      if (!frame) {
-        frame = requestAnimationFrame(() => {
-          frame = 0;
-          measureTimelineDay();
-          updateTimelineMotion();
-        });
-      }
-    };
-    window.addEventListener("scroll", schedule, { passive: true });
-    window.addEventListener("resize", schedule);
-    return () => {
-      window.removeEventListener("scroll", schedule);
-      window.removeEventListener("resize", schedule);
-      if (frame) cancelAnimationFrame(frame);
-      setTimelineDay(null);
-    };
-  }, []);
-
-  useEffect(() => {
-    const frame = requestAnimationFrame(() => {
-      measureTimelineDay();
-      updateTimelineMotion();
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [page, loadedPages]);
+  useTimelineTracking(posts);
 
   // The tag the mounted content represents (`null` = nothing loaded yet). Reload
   // whenever the URL's tag diverges from it — e.g. when Next's router cache
