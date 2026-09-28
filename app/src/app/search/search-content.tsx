@@ -6,8 +6,8 @@ import { searchPosts, Post } from "@/lib/api";
 import { PostFeed } from "@/components/post-feed";
 import { PostListSkeleton } from "@/components/post-list-skeleton";
 import { PostPagination } from "@/components/post-pagination";
-import { preloadHigh, preloadImages } from "@/lib/image-loader";
-import { firstPostMediaUrls, pageImageUrls } from "@/lib/post-media";
+import { prefetchImages, preloadHigh, preloadImages } from "@/lib/image-loader";
+import { FIRST_SCREEN_POSTS, firstPostMediaUrls, pageImageUrls } from "@/lib/post-media";
 import { preloadPostFonts } from "@/lib/font-preload";
 import { useTitle } from "@/lib/use-title";
 import { scrollToTop } from "@/lib/scroll";
@@ -34,7 +34,7 @@ function prefetchNeighbors(q: string, page: number, pages: number) {
       .then((r) => {
         pageCache.set(cacheKey(q, r.page), { posts: r.posts, pages: r.pages, matches: r.matches ?? r.total });
         preloadPostFonts(r.posts);
-        preloadImages(pageImageUrls(r.posts));
+        if (p === page + 1) prefetchImages(pageImageUrls(r.posts.slice(0, FIRST_SCREEN_POSTS)));
       })
       .catch(() => {});
   }

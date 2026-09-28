@@ -30,3 +30,26 @@ export function measureTimelineDay(): void {
   }
   setTimelineDay(active);
 }
+
+const DATE_FADE_PX = 24;
+const CLOCK_FADE_PX = 12;
+
+function setOpacity(el: HTMLElement, value: number): void {
+  const next = value >= 1 ? "" : value.toFixed(3);
+  if (el.style.opacity !== next) el.style.opacity = next;
+}
+
+export function updateTimelineMotion(): void {
+  let line = -Infinity;
+  for (const el of document.querySelectorAll<HTMLElement>("[data-timeline-date]")) {
+    const rect = el.getBoundingClientRect();
+    if (rect.height === 0) continue;
+    setOpacity(el, 1 - Math.min(1, Math.max(0, DOCK_LINE_PX - rect.top) / DATE_FADE_PX));
+    if (rect.top <= DOCK_LINE_PX + 0.5 && rect.bottom > DOCK_LINE_PX) line = Math.max(line, rect.bottom);
+  }
+  for (const el of document.querySelectorAll<HTMLElement>("[data-timeline-clock]")) {
+    const rect = el.getBoundingClientRect();
+    if (rect.height === 0) continue;
+    setOpacity(el, 1 - Math.min(1, Math.max(0, line - rect.top) / CLOCK_FADE_PX));
+  }
+}

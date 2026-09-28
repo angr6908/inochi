@@ -10,10 +10,10 @@ import { getPosts, loadEmojis, Post } from "@/lib/api";
 import { useAuth } from "@/lib/auth-context";
 import { postFontsReady, preloadPostFonts } from "@/lib/font-preload";
 import { consumeHomeLogoReset } from "@/lib/home-reset";
-import { preloadImages } from "@/lib/image-loader";
-import { pageImageUrls } from "@/lib/post-media";
+import { prefetchImages } from "@/lib/image-loader";
+import { FIRST_SCREEN_POSTS, pageImageUrls } from "@/lib/post-media";
 import { scrollToTop } from "@/lib/scroll";
-import { measureTimelineDay, setTimelineDay } from "@/lib/timeline-day";
+import { measureTimelineDay, setTimelineDay, updateTimelineMotion } from "@/lib/timeline-day";
 import { useTitle } from "@/lib/use-title";
 
 interface CachedPage {
@@ -78,7 +78,7 @@ function prefetchNeighbors(page: number, tag: string | undefined, pages: number)
           post_pages: r.post_pages,
         });
         preloadPostFonts(r.posts);
-        preloadImages(pageImageUrls(r.posts));
+        if (p === page + 1) prefetchImages(pageImageUrls(r.posts.slice(0, FIRST_SCREEN_POSTS)));
       })
       .catch(() => {})
       .finally(() => {
@@ -281,6 +281,7 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
         frame = requestAnimationFrame(() => {
           frame = 0;
           measureTimelineDay();
+          updateTimelineMotion();
         });
       }
     };
@@ -295,7 +296,10 @@ export function HomeContent({ initial, initialTag }: { initial: InitialPage | nu
   }, []);
 
   useEffect(() => {
-    const frame = requestAnimationFrame(measureTimelineDay);
+    const frame = requestAnimationFrame(() => {
+      measureTimelineDay();
+      updateTimelineMotion();
+    });
     return () => cancelAnimationFrame(frame);
   }, [page, loadedPages]);
 

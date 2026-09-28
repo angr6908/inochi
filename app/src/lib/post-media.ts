@@ -1,4 +1,5 @@
 import { Post, cachedEmojis } from "@/lib/api";
+import { previewHasText } from "@/lib/preview-text";
 
 const EMOJI_TOKEN = /:([a-zA-Z0-9_]+):/g;
 
@@ -34,4 +35,13 @@ export function pageImageUrls(posts: Post[]): string[] {
   const urls: string[] = [];
   for (const post of posts) urls.push(...postMediaUrls(post, emojiUrl));
   return urls;
+}
+
+export const FIRST_SCREEN_POSTS = 8;
+
+export function hasShownImage(post: Post): boolean {
+  return (
+    post.images.length > 0 ||
+    post.link_previews.some((lp) => previewHasText(lp) && !!(lp.thumbnail ?? lp.image_url))
+  );
 }

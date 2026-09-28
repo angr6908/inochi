@@ -4,6 +4,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { ChevronLeft, ChevronRight, X } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
+import type { ImagePriority } from "@/lib/image-loader";
 
 const iconButton =
   "absolute z-10 flex items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70 focus:outline-none focus-visible:outline-none cursor-pointer";
@@ -22,7 +23,7 @@ function GalleryImage({
 }: {
   image: GalleryImg;
   mode: "single" | "justified" | "lone";
-  priority?: boolean;
+  priority?: ImagePriority;
   onClick?: () => void;
 }) {
   // `src` is seeded from the prop but then owned locally, because the error
@@ -74,7 +75,7 @@ function GalleryImage({
       // off-screen photo up front, so the sync cost is paid one image at a time
       // as it scrolls into view — exactly what the thumbnails do.
       loading={priority ? "eager" : "lazy"}
-      fetchPriority={priority ? "high" : undefined}
+      fetchPriority={priority === "high" ? "high" : undefined}
       decoding="sync"
       style={style}
       onError={() => {
@@ -125,7 +126,7 @@ function GalleryImage({
 const aspectRatio = (img: GalleryImg) =>
   img.width && img.height ? img.width / img.height : 1;
 
-export function ImageGallery({ images, priority }: { images: GalleryImg[]; priority?: boolean }) {
+export function ImageGallery({ images, priority }: { images: GalleryImg[]; priority?: ImagePriority }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(0);
 

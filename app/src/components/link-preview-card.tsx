@@ -16,6 +16,7 @@ import {
 } from "simple-icons";
 import { LinkPreview } from "@/lib/api";
 import { previewHasText } from "@/lib/preview-text";
+import type { ImagePriority } from "@/lib/image-loader";
 import { brandMarkDark } from "@/lib/brand-color";
 import { cn } from "@/lib/utils";
 
@@ -27,7 +28,7 @@ function PreviewThumb({
 }: {
   src?: string;
   alt: string;
-  priority?: boolean;
+  priority?: ImagePriority;
   className?: string;
 }) {
   return (
@@ -35,7 +36,7 @@ function PreviewThumb({
       src={src}
       alt={alt}
       loading={priority ? "eager" : "lazy"}
-      fetchPriority={priority ? "high" : undefined}
+      fetchPriority={priority === "high" ? "high" : undefined}
       decoding="sync"
       className={className}
     />
@@ -465,12 +466,13 @@ function TweetCard({
   avatar: string;
   brand: BrandIcon | null;
   tags?: string[];
-  priority?: boolean;
+  priority?: ImagePriority;
 }) {
   const m = preview.author?.match(/^(.*?)\s*\((@[^)]+)\)\s*$/);
   const name = m ? m[1] : preview.author;
   const handle = m?.[2] ?? null;
   const text = preview.title ?? preview.description ?? null;
+  const hasTags = !!tags && tags.length > 0;
 
   return (
     <div className="group relative overflow-hidden rounded-xl border border-border bg-card px-3 py-2.5 transition-colors hover:bg-accent/40">
@@ -493,14 +495,26 @@ function TweetCard({
         {brand && <BrandMark icon={brand} className="ml-auto" />}
       </div>
 
-      {text && (
-        <p className="mt-1.5 line-clamp-4 whitespace-pre-wrap break-words text-sm leading-normal text-foreground">
+      {(text || hasTags) && (
+        <p className="mt-1.5 whitespace-pre-wrap break-words text-sm leading-normal text-foreground">
           {text}
+          {hasTags && (
+            <span
+              aria-hidden
+              className="invisible ml-2 inline-flex divide-x divide-transparent border-l border-transparent font-sans text-xs leading-none font-medium"
+            >
+              {tags.map((tag) => (
+                <span key={tag} className="px-2">
+                  {tag}
+                </span>
+              ))}
+            </span>
+          )}
         </p>
       )}
 
-      {tags && tags.length > 0 && (
-        <div className="-mr-3 -mb-2.5 mt-1 flex">
+      {hasTags && (
+        <div className="absolute right-0 bottom-0 flex">
           <PreviewTags tags={tags} />
         </div>
       )}
@@ -515,7 +529,7 @@ export function LinkPreviewCard({
 }: {
   preview: LinkPreview;
   tags?: string[];
-  priority?: boolean;
+  priority?: ImagePriority;
 }) {
   const [playing, setPlaying] = useState(false);
   const image = preview.thumbnail ?? preview.image_url;

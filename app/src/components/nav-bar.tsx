@@ -57,18 +57,6 @@ function DayIndicator() {
   );
 }
 
-function Avatar({ name, inline }: { name: string; inline?: boolean }) {
-  return (
-    <span
-      aria-hidden
-      data-icon={inline ? "inline-start" : undefined}
-      className="flex size-6 shrink-0 items-center justify-center rounded-full bg-primary/12 text-xs font-semibold text-primary uppercase"
-    >
-      {Array.from(name)[0]}
-    </span>
-  );
-}
-
 export function NavBar() {
   const { user, loading, signOut } = useAuth();
   const router = useRouter();
@@ -233,7 +221,6 @@ export function NavBar() {
                     <DropdownMenuTrigger
                       render={<Button variant="ghost" size="sm" className="max-w-40" />}
                     >
-                      <Avatar name={user.username} inline />
                       <span className="truncate">{user.username}</span>
                       <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
                     </DropdownMenuTrigger>

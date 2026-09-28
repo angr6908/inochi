@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { PostContent } from "./post-content";
 import { POST_CLAMP_LINES, postClampBuckets } from "@/lib/post-clamp";
 import type { CSSProperties } from "react";
+import type { ImagePriority } from "@/lib/image-loader";
 
 /** A post's text, clipped to POST_CLAMP_LINES lines with a Show more/less toggle
  *  when it is long. Which posts clip — and at which viewport widths — is decided
@@ -11,7 +12,7 @@ import type { CSSProperties } from "react";
  *  tokens, so the server HTML already carries the final, collapsed state. Nothing
  *  is measured and no effect runs, so a first load, a refresh or an SSR'd page
  *  paints the post exactly once, in the shape it keeps. */
-export function PostBody({ content, priority }: { content: string; priority?: boolean }) {
+export function PostBody({ content, priority }: { content: string; priority?: ImagePriority }) {
   const clamp = useMemo(() => postClampBuckets(content), [content]);
   const [expanded, setExpanded] = useState(false);
 

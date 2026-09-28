@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { Emoji, loadEmojis, cachedEmojis, emojisFetched } from "@/lib/api";
+import type { ImagePriority } from "@/lib/image-loader";
 import { memo, useEffect, useMemo, useState, type ReactNode } from "react";
 
 const TOKEN = /(https?:\/\/[^\s<>()[\]{}"']+)|(#[\p{L}\p{N}_]+)|:([a-zA-Z0-9_]+):/gu;
 
-export const PostContent = memo(function PostContent({ content, priority }: { content: string; priority?: boolean }) {
+export const PostContent = memo(function PostContent({ content, priority }: { content: string; priority?: ImagePriority }) {
   const [emojis, setEmojis] = useState<Emoji[]>(() => cachedEmojis() ?? []);
   const [loaded, setLoaded] = useState<boolean>(emojisFetched);
 
@@ -69,7 +70,7 @@ export const PostContent = memo(function PostContent({ content, priority }: { co
         } else {
           const url = emojiUrl.get(m[3]);
           if (url) {
-            out.push(<img key={key++} src={url} alt={m[3]} loading={priority ? "eager" : "lazy"} fetchPriority={priority ? "high" : undefined} decoding="sync" className="inline-block h-5 w-5 align-text-bottom" />);
+            out.push(<img key={key++} src={url} alt={m[3]} loading={priority ? "eager" : "lazy"} fetchPriority={priority === "high" ? "high" : undefined} decoding="sync" className="inline-block h-5 w-5 align-text-bottom" />);
           } else if (!loaded) {
             out.push(<span key={key++} aria-hidden className="inline-block h-5 w-5 align-text-bottom" />);
           } else {

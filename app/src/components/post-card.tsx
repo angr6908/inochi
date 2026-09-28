@@ -26,6 +26,7 @@ import { ImageEditGrid } from "./image-edit-grid";
 import { LinkPreviewCard } from "./link-preview-card";
 import { EchoLabel } from "./timeline";
 import { splitPreviewText } from "@/lib/preview-text";
+import type { ImagePriority } from "@/lib/image-loader";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { Reply, Pencil, Trash2, MoreHorizontal, Link2, Link2Off, ImagePlus } from "lucide-react";
@@ -154,8 +155,8 @@ interface PostCardProps {
   highlighted?: boolean;
   /** False when the card above already drew the border they share. */
   borderTop?: boolean;
-  /** Above-the-fold hint — eager-load this card's media (the first post in the feed). */
-  priority?: boolean;
+  /** Above-the-fold hint — eager-load this card's media. */
+  priority?: ImagePriority;
   /** Whether to show the standalone echo button (outside the menu). Defaults to
    *  true (thread page); feed views pass false unless the post has echoes worth
    *  surfacing. */

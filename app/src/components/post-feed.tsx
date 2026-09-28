@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Post } from "@/lib/api";
+import type { ImagePriority } from "@/lib/image-loader";
+import { FIRST_SCREEN_POSTS, hasShownImage } from "@/lib/post-media";
 import { localTime } from "@/lib/timeline";
 import { useTz } from "@/lib/tz";
 import { cn } from "@/lib/utils";
 import { PostCard } from "./post-card";
-import { TimelineTime } from "./timeline";
+import { TimelineDate, TimelineTime } from "./timeline";
 
 interface PostFeedProps {
   posts: Post[];
@@ -22,20 +24,24 @@ interface PostFeedProps {
   timeline?: boolean;
 }
 
-const CUSTOM_EMOJI = /:[a-z0-9_]*[a-z_][a-z0-9_]*:/i;
-
 function laneClass(echo: boolean, thread: boolean): string {
   if (echo) return "left-[10px] w-[3px] rounded-full bg-primary/45";
   if (thread) return "left-[11px] w-0 border-l border-dashed border-primary/60";
   return "left-[11px] w-px bg-border";
 }
 
-function hasMedia(p: Post): boolean {
-  return (
-    p.images.length > 0 ||
-    p.link_previews.some((lp) => lp.thumbnail || lp.image_url) ||
-    CUSTOM_EMOJI.test(p.content)
-  );
+const HIGH_PRIORITY_POSTS = 1;
+
+function imagePriorities(posts: Post[]): (ImagePriority | undefined)[] {
+  let high = 0;
+  return posts.map((post, i) => {
+    if (i >= FIRST_SCREEN_POSTS) return undefined;
+    if (high < HIGH_PRIORITY_POSTS && hasShownImage(post)) {
+      high += 1;
+      return "high";
+    }
+    return "eager";
+  });
 }
 
 // Posts are rendered in the order given (time order). No post's content is ever
@@ -49,7 +55,7 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus, tim
   const feedRef = useRef<HTMLDivElement>(null);
   const tz = useTz();
   const idsOnPage = new Set(posts.map((p) => p.id));
-  const priorityIndex = posts.findIndex(hasMedia);
+  const priorities = imagePriorities(posts);
 
   // Clicking an echo's reference scrolls to the echoed original and briefly
   // highlights it — same treatment as the thread page — rather than navigating
@@ -171,7 +177,7 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus, tim
       <PostCard
         key={post.id}
         post={post}
-        priority={i === priorityIndex}
+        priority={priorities[i]}
         echoVisible={echoVisible}
         echoInMenu
         hideParent={hideParent}
@@ -207,51 +213,62 @@ export function PostFeed({ posts, onUpdate, pageOfPost, onJumpToPage, focus, tim
   }
 
   const dayKeys = posts.map((post) => localTime(post.created_at, tz).key);
+  const days: number[][] = [];
+  posts.forEach((_, i) => {
+    if (i === 0 || dayKeys[i] !== dayKeys[i - 1]) days.push([i]);
+    else days[days.length - 1].push(i);
+  });
+
+  const renderRow = (i: number) => {
+    const post = posts[i];
+    const above = posts[i - 1];
+    const below = posts[i + 1];
+    const echoedAbove = !!above && above.parent_post_id === post.id;
+    const echoesBelow = !!below && post.parent_post_id === below.id;
+    const threadAbove = !!above && above.root_post_id === post.root_post_id;
+    const threadBelow = !!below && below.root_post_id === post.root_post_id;
+    const dayStart = i === 0 || dayKeys[i] !== dayKeys[i - 1];
+    const dayEnds = !!below && dayKeys[i + 1] !== dayKeys[i];
+    const last = i === posts.length - 1;
+    return (
+      <li key={post.id} data-timeline-day={post.created_at} className="flex">
+        <TimelineTime date={post.created_at} dayStart={dayStart} />
+        <div
+          className={cn(
+            "relative min-w-0 flex-1 pl-7",
+            !last && (threadBelow ? "pb-4" : dayEnds ? "pb-10" : "pb-6"),
+          )}
+        >
+          {!last && (
+            <span aria-hidden className={cn("absolute top-2 -bottom-2", laneClass(echoesBelow, threadBelow))} />
+          )}
+          <span
+            aria-hidden
+            className={cn(
+              "absolute rounded-full",
+              i === targetIdx
+                ? "top-[3px] left-[6.5px] size-[10px] bg-primary ring-4 ring-primary/20"
+                : post.parent_post_id
+                  ? "top-[4.5px] left-[8px] size-[7px] bg-primary ring-2 ring-background"
+                  : echoedAbove || threadAbove
+                    ? "top-[2.5px] left-[6px] size-[11px] border-2 border-primary bg-background"
+                    : "top-[3.5px] left-[7px] size-[9px] border-[1.5px] border-muted-foreground/60 bg-background",
+            )}
+          />
+          {renderPost(i, true)}
+        </div>
+      </li>
+    );
+  };
 
   return (
     <div ref={feedRef}>
-      <ol>
-        {posts.map((post, i) => {
-          const above = posts[i - 1];
-          const below = posts[i + 1];
-          const echoedAbove = !!above && above.parent_post_id === post.id;
-          const echoesBelow = !!below && post.parent_post_id === below.id;
-          const threadAbove = !!above && above.root_post_id === post.root_post_id;
-          const threadBelow = !!below && below.root_post_id === post.root_post_id;
-          const dayStart = i === 0 || dayKeys[i] !== dayKeys[i - 1];
-          const dayEnds = !!below && dayKeys[i + 1] !== dayKeys[i];
-          const last = i === posts.length - 1;
-          return (
-            <li key={post.id} data-timeline-day={post.created_at} className="flex">
-              <TimelineTime date={post.created_at} dayStart={dayStart} />
-              <div
-                className={cn(
-                  "relative min-w-0 flex-1 pl-7",
-                  !last && (threadBelow ? "pb-4" : dayEnds ? "pb-10" : "pb-6"),
-                )}
-              >
-                {!last && (
-                  <span aria-hidden className={cn("absolute top-2 -bottom-2", laneClass(echoesBelow, threadBelow))} />
-                )}
-                <span
-                  aria-hidden
-                  className={cn(
-                    "absolute rounded-full",
-                    i === targetIdx
-                      ? "top-[3px] left-[6.5px] size-[10px] bg-primary ring-4 ring-primary/20"
-                      : post.parent_post_id
-                        ? "top-[4.5px] left-[8px] size-[7px] bg-primary ring-2 ring-background"
-                        : echoedAbove || threadAbove
-                          ? "top-[2.5px] left-[6px] size-[11px] border-2 border-primary bg-background"
-                          : "top-[3.5px] left-[7px] size-[9px] border-[1.5px] border-muted-foreground/60 bg-background",
-                  )}
-                />
-                {renderPost(i, true)}
-              </div>
-            </li>
-          );
-        })}
-      </ol>
+      {days.map((day) => (
+        <section key={posts[day[0]].id} className="relative">
+          <TimelineDate date={posts[day[0]].created_at} />
+          <ol>{day.map(renderRow)}</ol>
+        </section>
+      ))}
     </div>
   );
 }

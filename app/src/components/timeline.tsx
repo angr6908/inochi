@@ -3,31 +3,46 @@
 import { useState } from "react";
 import { CornerLeftDown } from "lucide-react";
 import { useTz } from "@/lib/tz";
-import { clockLabel, localTime, monthDay } from "@/lib/timeline";
+import { clockLabel, localTime, monthDay, type LocalTime } from "@/lib/timeline";
 import { cn } from "@/lib/utils";
+
+function DateMark({ t, className }: { t: LocalTime; className?: string }) {
+  const [month, day] = monthDay(t).split(" ");
+  return (
+    <span className={cn("flex flex-col self-stretch", className)}>
+      <span className="flex justify-between gap-1 text-[0.8rem] font-semibold whitespace-nowrap text-foreground">
+        <span>{month}</span>{" "}
+        <span>{day}</span>
+      </span>
+      <span aria-hidden className="mt-1 mb-0.5 h-px bg-border" />
+    </span>
+  );
+}
+
+export function TimelineDate({ date }: { date: string }) {
+  const tz = useTz();
+  return (
+    <div className="pointer-events-none absolute top-0 bottom-2 left-0 z-10 w-[46px]">
+      <div data-timeline-date className="sticky top-14 -mt-2 flex flex-col bg-background pt-2 text-xs leading-4 tabular-nums">
+        <DateMark t={localTime(date, tz)} />
+      </div>
+    </div>
+  );
+}
 
 export function TimelineTime({ date, dayStart }: { date: string; dayStart: boolean }) {
   const tz = useTz();
   const [now] = useState(() => Date.now());
   const t = localTime(date, tz);
   const otherYear = t.year !== localTime(now, tz).year;
-  const [month, day] = monthDay(t).split(" ");
   return (
     <time
       dateTime={date}
       suppressHydrationWarning
       className="mr-1 flex w-[46px] shrink-0 flex-col items-end text-right text-xs leading-4 text-muted-foreground tabular-nums"
     >
-      {dayStart && (
-        <span className="flex flex-col self-stretch">
-          <span className="flex justify-between text-[0.8rem] font-semibold whitespace-nowrap text-foreground">
-            <span>{month}</span>{" "}
-            <span>{day}</span>
-          </span>
-          <span aria-hidden className="mt-1 mb-0.5 h-px bg-border" />
-        </span>
-      )}
-      <span className="whitespace-nowrap">{clockLabel(t)}</span>
+      {dayStart && <DateMark t={t} className="invisible" />}
+      <span data-timeline-clock className="whitespace-nowrap">{clockLabel(t)}</span>
       {dayStart && otherYear && <span>{t.year}</span>}
     </time>
   );
