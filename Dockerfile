@@ -16,10 +16,12 @@ FROM nodebase AS runtime
 RUN apk add --no-cache vips-tools libavif-apps
 
 COPY --from=caddy:latest /usr/bin/caddy /usr/sbin/caddy
+COPY --from=restic/restic:latest /usr/bin/restic /usr/bin/restic
 COPY --from=backend /src/target/release/inochi-backend /usr/local/bin/inochi-backend
 
 COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
 COPY fetch-web.mjs /usr/local/lib/inochi/fetch-web.mjs
+COPY backup.mjs /usr/local/lib/inochi/backup.mjs
 
 # HOSTNAME keeps the Next server on loopback, so Caddy stays the only way in;
 # it would otherwise default to 0.0.0.0. NODE_ENV is set because transitive deps

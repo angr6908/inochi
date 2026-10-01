@@ -17,6 +17,13 @@ stop_all() {
 
 trap stop_all INT TERM
 
+if [ -n "$RESTIC_REPOSITORY" ]; then
+  while :; do
+    sleep $((43200 - $(date +%s) % 43200))
+    node /usr/local/lib/inochi/backup.mjs || true
+  done &
+fi
+
 until node /usr/local/lib/inochi/fetch-web.mjs; do
   [ -e /data/web/current/server.js ] && break
   if ! kill -0 "$BACK" 2>/dev/null || ! kill -0 "$CADDY" 2>/dev/null; then
