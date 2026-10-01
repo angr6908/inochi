@@ -1,10 +1,8 @@
-# Node 26.9.0 is only in Alpine edge. Both edge repositories are supplied for
-# the package and its shared-library dependencies; the version is pinned.
 FROM alpine:3.24 AS nodebase
 RUN apk add --no-cache \
     --repository=https://dl-cdn.alpinelinux.org/alpine/edge/main \
     --repository=https://dl-cdn.alpinelinux.org/alpine/edge/community \
-    nodejs-current=26.9.0-r0
+    nodejs-current
 
 FROM rust:1.98.1-alpine AS backend
 RUN apk add --no-cache build-base openssl-dev openssl-libs-static pkgconfig
@@ -15,8 +13,9 @@ COPY core/src ./src
 RUN cargo build --release && strip target/release/inochi-backend
 
 FROM nodebase AS runtime
-RUN apk add --no-cache caddy vips-tools libavif-apps
+RUN apk add --no-cache vips-tools libavif-apps
 
+COPY --from=caddy:latest /usr/bin/caddy /usr/sbin/caddy
 COPY --from=backend /src/target/release/inochi-backend /usr/local/bin/inochi-backend
 
 COPY --chmod=755 entrypoint.sh /usr/local/bin/entrypoint.sh
@@ -27,7 +26,6 @@ COPY fetch-web.mjs /usr/local/lib/inochi/fetch-web.mjs
 # (React among them) branch on it for dev-only warnings and bookkeeping, even
 # though the standalone server.js itself hardcodes production.
 ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1 \
     PORT=3000 \
     HOSTNAME=127.0.0.1 \
     XDG_CONFIG_HOME=/data/.caddy/config \

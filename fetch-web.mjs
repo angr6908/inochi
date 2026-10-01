@@ -62,12 +62,16 @@ function installedVersion() {
   }
 }
 
-async function replace(version, installed) {
-  await install(version);
-  const keep = [version, installed, "current", "restart"];
+function removeExcept(...versions) {
+  const keep = [...versions, "current", "restart"];
   for (const entry of readdirSync(WEB_DIR)) {
     if (!keep.includes(entry)) rmSync(join(WEB_DIR, entry), { recursive: true, force: true });
   }
+}
+
+async function replace(version, installed) {
+  await install(version);
+  removeExcept(version, installed);
 }
 
 async function main(mode) {
@@ -77,6 +81,11 @@ async function main(mode) {
 
   if (mode === "--check") {
     console.log(JSON.stringify({ installed, latest: await latestVersion(), pinned }));
+    return;
+  }
+
+  if (mode === "--prune") {
+    if (installed) removeExcept(installed);
     return;
   }
 

@@ -29,6 +29,7 @@ done
 rm -f /data/web/restart
 node /data/web/current/server.js &
 FRONT=$!
+node /usr/local/lib/inochi/fetch-web.mjs --prune || true
 
 while kill -0 "$BACK" 2>/dev/null && kill -0 "$FRONT" 2>/dev/null && kill -0 "$CADDY" 2>/dev/null; do
   if [ -e /data/web/restart ]; then
@@ -37,6 +38,7 @@ while kill -0 "$BACK" 2>/dev/null && kill -0 "$FRONT" 2>/dev/null && kill -0 "$C
     wait "$FRONT" 2>/dev/null || true
     node /data/web/current/server.js &
     FRONT=$!
+    node /usr/local/lib/inochi/fetch-web.mjs --prune || true
   fi
   sleep 2
 done
